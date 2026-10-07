@@ -1,5 +1,7 @@
 """coach — ElevenLabs call coaching loop.   Run `./coach` with no arguments for a numbered menu.
 
+  coach setup                       first-time setup: your call source, your business, your keys (asks questions)
+  coach checklist generate          write a new checklist from your business profile (after editing it)
   coach accounts                    list client accounts (one ElevenLabs key + agent set per client)
   coach use <account>               choose which client account the next commands work on
   coach agents [list --all]         agents in this account (● included, ○ paused); --all shows every agent in ElevenLabs
@@ -617,6 +619,12 @@ def cmd_dashboard(args) -> int:
 
 HELP_TEXT = """Sales Call Coach — the commands you need
 
+  Getting started
+    coach setup               answer a few questions about your business and calls (run once per business)
+    coach doctor              check your keys and access
+    coach pilot --limit 25    first report from your last 2 days of calls
+    coach checklist generate  new checklist after you edit config/business/<name>.md
+
   Dashboard (the web page in Chrome)
     coach dashboard on        turn it on (stays on, also after a restart)
     coach dashboard off       turn it off
@@ -632,6 +640,26 @@ HELP_TEXT = """Sales Call Coach — the commands you need
     coach                     the numbered menu (all of the above + more)
     coach help                this list
 """
+
+
+def cmd_checklist(args, settings) -> int:
+    """Writes a new checklist version from config/business/<account>.md (and the agent's script for ElevenLabs)."""
+    from .account_edit import account_file
+    from .setup import DEFAULT_MODEL, agent_script, write_checklist
+
+    if not settings.profile:
+        print(f"No business profile for '{settings.account}'. Run `./coach setup`, or write one and add "
+              f'profile = "config/business/{settings.account}.md" to the account file.')
+        return 1
+    script = ""
+    if settings.source == "elevenlabs" and settings.el_api_key:
+        script = agent_script(_client(settings).get_agent(settings.select_agents(None)[0].agent_id))
+    booking = settings.source == "elevenlabs" and settings.outcome.get("rule") == "booked"
+    write_checklist(settings.root, settings.account, account_file(settings.account, settings.root), settings.profile,
+                    booking_tool=booking, api_key=settings.env.get("OPENROUTER_API_KEY") or "",
+                    model=settings.env.get("REPORT_MODEL") or DEFAULT_MODEL, script=script)
+    print("Past calls were graded with the old checklist; `./coach review` grades calls again with the new one.")
+    return 0
 
 
 def cmd_help(args) -> int:
@@ -759,6 +787,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("dashboard", help="turn the dashboard on/off, open it, or check it")
     sp.add_argument("action", nargs="?", default="status", choices=["on", "off", "open", "status", "update"])
     sub.add_parser("help", help="the short list of commands you need")
+    sub.add_parser("setup", help="first-time setup: call source, your business, keys (asks questions)")
+    sp = sub.add_parser("checklist", help="write a new checklist for this account from its business profile")
+    sp.add_argument("action", choices=["generate"])
     sp = sub.add_parser("schedule", help="daily 07:00 refresh + always-on dashboard (macOS launchd)")
     sp.add_argument("action", choices=["install", "uninstall", "status", "run-now"])
     sp.add_argument("--hour", type=int, default=7)
@@ -825,6 +856,10 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if not argv:
+        if not list_accounts():                     # first run: nothing set up yet
+            from .setup import run_setup
+            run_setup()
+            return 0
         from .menu import run_menu
         return run_menu(lambda a: main(a))
     args = build_parser().parse_args(argv)
@@ -840,6 +875,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_dashboard(args)
         if args.cmd == "help":
             return cmd_help(args)
+        if args.cmd == "setup":
+            from .setup import run_setup
+            run_setup()
+            return 0
         settings = load_settings(account=args.account)
         print(f"[account: {settings.account}]", file=sys.stderr)
         what = ELEVENLABS_ONLY.get("criteria push" if args.cmd == "criteria" and args.action == "push" else args.cmd)
@@ -848,6 +887,8 @@ def main(argv: list[str] | None = None) -> int:
                               f"account '{settings.account}' reads calls from {settings.source}.")
         if args.cmd == "agents":
             return cmd_agents(args, settings)
+        if args.cmd == "checklist":
+            return cmd_checklist(args, settings)
         if args.cmd == "doctor":
             return cmd_doctor(args, settings)
         if args.cmd == "criteria":

@@ -62,6 +62,7 @@ class Settings:
     fireflies: dict = field(default_factory=dict)   # [fireflies] limits from coach.toml
     rep_names: list[str] = field(default_factory=list)   # fireflies: how the salespeople appear as speakers
     recordings: dict = field(default_factory=dict)  # recordings: folder, language, rep_speaker + [recordings] limits
+    profile: str = ""                               # the business profile text (config/business/<account>.md), if any
 
     def agent(self, key_or_id: str) -> Agent:
         for a in self.agents:
@@ -250,4 +251,6 @@ def load_settings(root: Path | None = None, config_name: str = "config/coach.tom
         rep_names=list(acct.get("rep_names") or []),
         recordings={**RECORDINGS_DEFAULTS, **data.get("recordings", {}), "folder": acct.get("folder") or f"recordings/{acct_key}",
                     "language": acct.get("language"), "rep_speaker": int(acct.get("rep_speaker") or 1)},
+        profile=(root / acct["profile"]).read_text(encoding="utf-8")
+        if acct.get("profile") and (root / acct["profile"]).is_file() else "",
     )

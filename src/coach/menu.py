@@ -102,6 +102,7 @@ def run_menu(run) -> int:
             print(" d  Turn the dashboard ON                (coach dashboard on)")
         print(" u  Update the dashboard after a change  (coach dashboard update)")
         print(" s  Daily 07:00 refresh: status / run now")
+        print(" n  Set up another business / client       (coach setup)")
         print(" h  Help: the short list of commands")
         print(" 0  Exit")
         choice = _ask("\nPick a number")
@@ -175,6 +176,8 @@ def run_menu(run) -> int:
         elif choice == "u":
             print("Downloading the parts, rebuilding, restarting, then deleting the parts again (under a minute)…")
             run(["dashboard", "update"])
+        elif choice == "n":
+            run(["setup"])
         elif choice == "h":
             run(["help"])
         elif choice == "s":

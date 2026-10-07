@@ -12,8 +12,8 @@ BETA = ALPHA.replace('"Alpha"', '"Beta"').replace("EL_KEY_ALPHA", "EL_KEY_BETA")
 def root(tmp_path, monkeypatch):
     from coach.config import PROJECT_ROOT
     (tmp_path / "config" / "accounts").mkdir(parents=True)
-    for f in ("coach.toml", "checklist_c1.toml"):
-        (tmp_path / "config" / f).write_text((PROJECT_ROOT / "config" / f).read_text())
+    (tmp_path / "config" / "coach.toml").write_text((PROJECT_ROOT / "config" / "coach.toml").read_text())
+    (tmp_path / "config" / "checklist_c1.toml").write_text((PROJECT_ROOT / "tests" / "checklist_c1.toml").read_text())
     (tmp_path / "config" / "accounts" / "alpha.toml").write_text(ALPHA)
     (tmp_path / "config" / "accounts" / "_template.toml").write_text(ALPHA)
     monkeypatch.delenv("COACH_ACCOUNT", raising=False)

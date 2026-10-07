@@ -3,9 +3,23 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import time
+from pathlib import Path
 
 import httpx
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def demo_root(tmp: Path) -> Path:
+    """A throwaway project root holding the demo account, so it never shows up among the user's own accounts."""
+    (tmp / "config" / "accounts").mkdir(parents=True, exist_ok=True)
+    shutil.copy(ROOT / "config" / "coach.toml", tmp / "config" / "coach.toml")
+    shutil.copy(ROOT / "tests" / "checklist_c1.toml", tmp / "config" / "checklist_c1.toml")
+    shutil.copy(ROOT / "tests" / "demo_account.toml", tmp / "config" / "accounts" / "demo.toml")
+    return tmp
+
 
 AGENTS = {"cold": "agent_demo_cold", "main": "agent_demo_main"}
 FAKE_NAME = "ישראל ישראלי"

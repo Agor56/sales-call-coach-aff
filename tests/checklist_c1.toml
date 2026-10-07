@@ -1,4 +1,4 @@
-# Checklist c1 — pushed to the agents as ElevenLabs evaluation criteria.
+# Checklist c1 — demo checklist (Hebrew business-loan qualifier) used by the tests. Real accounts get their own checklist from `coach setup`.
 # ElevenLabs returns success / failure / unknown per criterion:
 #   success = the desirable behaviour happened
 #   failure = the undesirable behaviour happened

@@ -9,12 +9,12 @@ sys.path.insert(0, str(Path(__file__).parent))
 from coach import db  # noqa: E402
 from coach.config import load_settings  # noqa: E402
 from coach.elevenlabs import ElevenLabsClient  # noqa: E402
-from synthetic import FakeElevenLabs, build_calls  # noqa: E402
+from synthetic import FakeElevenLabs, build_calls, demo_root  # noqa: E402
 
 
 @pytest.fixture
 def settings(tmp_path):
-    s = load_settings(account="demo")
+    s = load_settings(demo_root(tmp_path / "project"), account="demo")
     s = dataclasses.replace(s, db_path=tmp_path / "coach.sqlite3", reports_dir=tmp_path / "reports",
                             env={**s.env, "ELEVENLABS_API_KEY": "test-key", "GRADER": "elevenlabs",
                                  "OPENROUTER_API_KEY": "", "REPORT_PROVIDER": "openrouter"})

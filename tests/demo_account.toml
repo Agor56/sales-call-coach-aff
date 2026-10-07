@@ -1,4 +1,4 @@
-# Demo account — fake agent ids, used by the tests and `scripts/synthetic_demo.py`.
+# Demo account — fake agent ids. Used only by the tests and `scripts/synthetic_demo.py` (copied into a temp folder).
 # Copy _template.toml to <your-client>.toml for a real account (or _template_fireflies / _template_recordings).
 
 label = "Demo (synthetic)"

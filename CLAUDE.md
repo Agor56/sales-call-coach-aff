@@ -8,25 +8,21 @@ Most users are business owners, not developers.
 1. Check `uv` and Node.js 20+ are installed (`uv --version`, `node --version`). If not, give them the install command
    for their OS and wait.
 2. `uv sync`
-3. Ask which call source they use:
-   - ElevenLabs voice agents → copy `config/accounts/_template.toml`
-   - Fireflies (recorded Zoom / Google Meet calls) → copy `config/accounts/_template_fireflies.toml`
-   - Phone call recordings (audio files) → copy `config/accounts/_template_recordings.toml` and create `recordings/<name>/`
-   Name the copy after their business, e.g. `config/accounts/acme.toml`, and set `api_key_env` to match
-   (e.g. `ELEVENLABS_API_KEY_ACME`).
-4. Ask them to describe their agent or sales call in one or two sentences, and put it in `description`.
-5. `cp .env.example .env`, then tell them which keys to paste into `.env` themselves:
-   `OPENROUTER_API_KEY` and their source key. **Never ask them to paste keys into the chat, and never print `.env`.**
-6. `./coach use <name>`
-7. ElevenLabs: `./coach agents list --all`, ask which agents to coach, then `./coach agents add <agent_id>` for each.
-   Check the account's `booking_tool_prefix` matches the agent's booking tool (shown by `./coach doctor`).
-8. `./coach doctor` and fix whatever it reports.
-9. `./coach pilot --limit 25` for the first report, then `./coach dashboard on`.
-10. Offer `./coach schedule install` (macOS) for a daily refresh.
+3. Ask the user to run `./coach setup` **in their own terminal** (it asks questions and takes keys hidden; you can't
+   type into it). It asks where their calls come from, about their business (or a file with their script), their keys,
+   and writes the account, the business profile and a checklist made for their business.
+   If they'd rather answer you in chat, help them write `config/business/<name>.md`, then they run `./coach setup`
+   and choose "Use a file I already have".
+4. `./coach doctor` and fix whatever it reports.
+5. `./coach pilot --limit 25` for the first report, then `./coach dashboard on`.
+6. Offer `./coach schedule install` (macOS) for a daily refresh.
+
+To improve the checklist later: edit `config/business/<name>.md`, then `./coach checklist generate`.
+**Never ask the user to paste keys into the chat, and never print `.env`.**
 
 ## Rules
 
-- Tests: `uv run pytest -q`. They use synthetic data only (`config/accounts/demo.toml`, `tests/synthetic.py`).
+- Tests: `uv run pytest -q`. They use synthetic data only (`tests/demo_account.toml`, `tests/synthetic.py`).
 - `coach experiment` and `coach opener` change a live ElevenLabs agent. Always run without `--apply` first,
   show the user the plan, and only add `--apply` after they say yes.
-- Never commit `.env`, `data/`, `recordings/`, `reports/` or `dashboard/data/` (they are in `.gitignore`).
+- Never commit `.env`, `data/`, `recordings/`, `reports/`, `dashboard/data/` or the user's own business files, accounts and checklists (all in `.gitignore`).

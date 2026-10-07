@@ -10,3 +10,8 @@ reports/*
 !reports/SYNTHETIC-*.md
 dashboard/data/
 dashboard/.dashboard.log
+# your own business: profile, accounts and generated checklists stay on your computer
+config/business/
+config/accounts/*
+!config/accounts/_template*.toml
+config/checklist_*_*.toml

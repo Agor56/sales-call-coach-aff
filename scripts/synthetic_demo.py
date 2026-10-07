@@ -15,10 +15,10 @@ from coach.config import load_settings  # noqa: E402
 from coach.elevenlabs import ElevenLabsClient  # noqa: E402
 from coach.pipeline import discover, fetch_details  # noqa: E402
 from coach.report import build_report  # noqa: E402
-from synthetic import FakeElevenLabs, build_calls  # noqa: E402
+from synthetic import FakeElevenLabs, build_calls, demo_root  # noqa: E402
 
 tmp = Path(tempfile.mkdtemp())
-s = load_settings(account="demo")
+s = load_settings(demo_root(tmp / "project"), account="demo")
 s = dataclasses.replace(s, db_path=tmp / "synthetic.sqlite3", reports_dir=ROOT / "reports")
 s.agents = [a for a in s.agents if a.key in ("cold", "main")]
 fake = FakeElevenLabs(build_calls())

@@ -35,18 +35,26 @@ never names, phone numbers or what was said (except recordings accounts, which k
 ## Quick start
 
 ```bash
-git clone <this repo> sales-call-coach && cd sales-call-coach
+git clone https://github.com/Agor56/sales-call-coach-aff.git sales-call-coach && cd sales-call-coach
 uv sync
-cp .env.example .env                                           # add OPENROUTER_API_KEY + your source key
-cp config/accounts/_template.toml config/accounts/acme.toml    # or _template_fireflies / _template_recordings
-#   edit acme.toml: label, api_key_env, description of your agent, outcome rule
-./coach use acme
-./coach agents list --all        # ElevenLabs: every agent in your account
-./coach agents add agent_xxx     # add the agents to coach
+./coach setup                    # asks where your calls come from, about your business, and your keys
 ./coach doctor                   # checks keys and access (never prints them)
 ./coach pilot --limit 25         # first report from your last 2 days of calls
+./coach dashboard on             # the dashboard at http://localhost:3007
 ./coach                          # numbered menu with everything else
 ```
+
+`coach setup` asks:
+1. **Where your calls come from**: ElevenLabs voice agents, Fireflies, or a folder of phone recordings.
+2. **About your business**: what you sell, what the calls are for, what a good call ends with, what the agent must and
+   must never do. Or point it at a file you already have (call script, agent prompt, sales process).
+   This is saved in `config/business/<name>.md`.
+3. **Your keys**, typed hidden and saved only in `.env` on your computer.
+4. ElevenLabs only: which agents to coach, and which of their tools books the meeting.
+
+Then an AI writes a checklist made for your business (`config/checklist_<name>_1.toml`): one question that decides
+whether a call worked (unless your agent's booking tool tells it), plus 5–8 behaviours to check on every call.
+Edit the business file any time and run `./coach checklist generate` for a new version. Works for any industry.
 
 Using an AI coding assistant (Claude Code, Cursor…)? Open this folder and ask it to "set up Sales Call Coach for me":
 `CLAUDE.md` tells it the steps.
@@ -113,7 +121,7 @@ Recordings accounts:
 Fireflies accounts:
 - In the account file, each "agent" is one salesperson: `agent_id` is the email that organizes their meetings, or `all`.
 - The salesperson's side of the call is found from `rep_names`. If that's empty, the coach uses the meeting organizer's name.
-- Grading always uses Jev, so `OPENROUTER_API_KEY` is needed. The checklist is `config/checklist_s1.toml`.
+- Grading always uses Jev, so `OPENROUTER_API_KEY` is needed.
 - Opener tests (`experiment`, `opener`) and `criteria push` only work with ElevenLabs agents.
 - The free plan allows 50 API requests a day. Each list request brings up to 25 meetings with their transcripts.
   Transcripts are kept in memory for that run only and never saved to disk.
@@ -166,10 +174,10 @@ Fireflies accounts:
 Bump `outcome.version` when you change the rule. Changing it recomputes the analysis from stored facts.
 Nothing is regraded or refetched.
 
-**Checklists** (`config/checklist_*.toml`): `c1` is an example for a Hebrew lead-qualification agent, `r1` for an English
-outbound agent, `s1` for human sales calls. Write one for your own script: each criterion is one observable behaviour with
-success / failure / unknown definitions. To change any wording, create a new file with a new id prefix. Never edit a
-version that's already in use.
+**Checklists** (`config/checklist_*.toml`): `coach setup` / `coach checklist generate` write one for your business.
+`a1` (AI voice agents) and `s1` (human sales calls) are general fallbacks used until you have an OpenRouter key.
+Each criterion is one observable behaviour with success / failure / unknown definitions. A changed checklist should
+get a new version (the generator does this), so old and new grades are never mixed.
 
 ## Reading the report
 
