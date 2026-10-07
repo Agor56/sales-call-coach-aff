@@ -1,0 +1,20 @@
+# Copy to config/accounts/<client>.toml (e.g. acme.toml), fill in, then add the key to .env.
+# Run `./coach agents --account <client>` to list the agent ids in that ElevenLabs account.
+
+label = "Client name"
+api_key_env = "ELEVENLABS_API_KEY_CLIENT"        # add ELEVENLABS_API_KEY_CLIENT=... to .env
+base_url = "https://api.elevenlabs.io"
+checklist = "config/checklist_c1.toml"           # write a client-specific checklist for a different script
+
+[outcome]
+version = "booked_v1"
+booking_tool_prefix = "book_"                    # prefix of the tool that books the meeting
+# Qualification rule for the booking tool's parameters. Set both to 0 to count every successful booking.
+min_annual_turnover_nis = 0
+min_asset_value_nis = 0
+callback_without_profile = "success"
+
+[[agents]]
+key = "main"
+agent_id = "agent_..."
+label = "Agent name"

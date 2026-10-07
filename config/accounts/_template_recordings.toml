@@ -1,0 +1,29 @@
+# Recordings account: drop call recordings (mp3, wav, m4a…) from your phone system or a call-recording app into a folder.
+# Each new file is transcribed once with ElevenLabs Scribe (~$0.22 per hour of audio), then graded and reported.
+# Copy to config/accounts/<name>.toml, then:
+#   1. add your ElevenLabs key to .env:  ELEVENLABS_API_KEY_TEAM=...   (elevenlabs.io → Developers → API keys;
+#      a restricted key needs the "Speech to Text" permission)
+#   2. add OPENROUTER_API_KEY to .env (grading always uses Jev)
+#   3. put recordings in recordings/<name>/ and run `./coach use <name>` and `./coach pilot`
+# Transcripts are saved in data/<name>/transcripts/ on this computer only. Recordings and transcripts are never pushed.
+
+label = "Team name"
+source = "recordings"
+api_key_env = "ELEVENLABS_API_KEY_TEAM"
+checklist = "config/checklist_s1.toml"
+description = "Salespeople calling leads for <what you sell>. The goal of each call is a booked follow-up meeting."
+# folder = "recordings/team"        # default: recordings/<this file's name>
+# language = "en"                   # default: detected per recording (Hebrew = "he")
+# rep_speaker = 1                   # who is the salesperson: 1 = whoever speaks first, 2 = the second voice
+
+[outcome]
+version = "next_step_v1"
+rule = "criterion"                  # recordings have no booking tool: the grader's answer to one question decides
+criterion = "s1_next_step_booked"   # success = the call ended with a dated next step or a sale
+
+# "all" = every recording in the folder. For one entry per salesperson, put their recordings in a subfolder
+# and use the subfolder name as agent_id.
+[[agents]]
+key = "team"
+agent_id = "all"
+label = "Whole team"

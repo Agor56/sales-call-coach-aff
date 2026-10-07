@@ -1,0 +1,31 @@
+# Demo account — fake agent ids, used by the tests and `scripts/synthetic_demo.py`.
+# Copy _template.toml to <your-client>.toml for a real account (or _template_fireflies / _template_recordings).
+
+label = "Demo (synthetic)"
+api_key_env = "ELEVENLABS_API_KEY_DEMO"
+base_url = "https://api.elevenlabs.io"           # residency workspaces: https://api.eu.residency.elevenlabs.io etc.
+checklist = "config/checklist_c1.toml"
+description = "Dana, an AI qualifier (Hebrew) for business-loan pre-qualification. She checks the business is active, collects field, turnover, financing need and bank status (or property for asset routes), and books a call with a human credit manager."
+
+[outcome]
+version = "booked_sane_v1"
+booking_tool_prefix = "book_callback"
+# Qualification rule on the booking tool's parameters. 0 = count every successful booking.
+min_annual_turnover_nis = 0
+min_asset_value_nis = 0
+# Plausibility: numbers outside these are almost always mis-heard → the booking counts as junk.
+max_annual_turnover_nis = 50000000
+max_loan_to_turnover = 3.0
+# Callbacks booked before any profile question ("call me later"): "unknown" keeps them out of comparisons.
+callback_without_profile = "unknown"
+
+# `key` is the short name used on the command line (--agent cold).
+[[agents]]
+key = "cold"
+agent_id = "agent_demo_cold"
+label = "Dana - Cold Calling"
+
+[[agents]]
+key = "main"
+agent_id = "agent_demo_main"
+label = "Dana - Qualifier"

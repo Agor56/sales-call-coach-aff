@@ -1,0 +1,24 @@
+# Fireflies account: recorded sales calls (Zoom, Google Meet, Teams…) of human salespeople, read from Fireflies.ai.
+# Copy to config/accounts/<name>.toml, then add the key to .env:
+#   FIREFLIES_API_KEY_TEAM=...   (Fireflies → Integrations → Fireflies API)
+# Grading always uses Jev via OpenRouter, so OPENROUTER_API_KEY is needed too.
+# Opener tests and `criteria push` only exist for ElevenLabs agents.
+
+label = "Team name"
+source = "fireflies"
+api_key_env = "FIREFLIES_API_KEY_TEAM"
+checklist = "config/checklist_s1.toml"
+description = "Human salespeople running discovery calls for <what you sell>. The goal of each call is a booked follow-up meeting."
+# How the salespeople appear as speakers in Fireflies, e.g. ["Dana Cohen", "Avi"]. Empty = the meeting organizer.
+rep_names = []
+
+[outcome]
+version = "next_step_v1"
+rule = "criterion"                  # human calls have no booking tool: the grader's answer to one question decides
+criterion = "s1_next_step_booked"   # success = the call ended with a dated next step or a sale
+
+# One entry per salesperson: agent_id = the email that organizes their meetings. Or one entry with "all".
+[[agents]]
+key = "team"
+agent_id = "all"
+label = "Whole team"

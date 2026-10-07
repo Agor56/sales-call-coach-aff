@@ -1,0 +1,50 @@
+# Sales Call Coach shared settings. Secrets live in .env, never here.
+
+[elevenlabs]
+timeout_secs = 30
+max_retries = 4                 # for 429 / 5xx / timeouts; honours Retry-After
+min_interval_secs = 0.2         # polite throttle between requests (sequential, concurrency = 1)
+max_requests_per_run = 3000     # hard cap per command invocation
+
+[fireflies]                      # only for accounts with source = "fireflies"
+timeout_secs = 60
+max_retries = 3
+min_interval_secs = 1.0
+max_requests_per_run = 500      # the free plan allows 50 requests a day, Pro 500
+page_size = 25                  # meetings per list request (max 50); each carries its full transcript
+
+[recordings]                     # only for accounts with source = "recordings" (ElevenLabs Scribe, ~$0.22 per audio hour)
+model = "scribe_v2"
+timeout_secs = 600              # long recordings take a while to transcribe
+max_retries = 2
+max_files_per_run = 50          # new files transcribed per run; the rest wait for the next run
+
+# Client accounts (keys, agents, success rule, checklist) live in config/accounts/<client>.toml.
+
+[discovery]
+default_days = 7
+overlap_hours = 48              # re-scan this much before the last window end to catch late-finishing analysis
+page_size = 100
+
+[funnel]
+# message_count includes the agent's opener. 1 = lead never spoke.
+engaged_min_messages = 5        # opener + at least two lead turns
+detail_min_messages = 2         # fetch full details only for calls where the lead said something
+
+[grader]
+# Who answers the checklist per call. Override with GRADER=elevenlabs|jev in .env.
+#   elevenlabs: criteria pushed onto the agents, graded by ElevenLabs for free (needs `criteria push --apply`)
+#   jev:        TypeSafe's Jev decision model via OpenRouter's Decisions API — typed answer + probabilities,
+#               input ~$0.042 per million tokens, output free; nothing changes on the live agents
+provider = "elevenlabs"
+model = "typesafe/jev-1.13"     # pinned so thresholds stay comparable; `~typesafe/jev-latest` tracks new releases
+# Jev answers below this confidence are counted as "unknown" in comparisons (0 = keep every answer).
+# Tune after the spot-check against your own judgement; changing it needs no regrading.
+min_confidence = 0.0
+
+[report]
+max_tokens = 32000               # includes the model's reasoning tokens on OpenRouter
+effort = "high"
+max_example_calls = 8
+min_group_size = 20             # comparisons with fewer calls per group are flagged as too small
+slow_response_secs = 3.0        # a call counts as "slow" when its 90th-percentile response time exceeds this

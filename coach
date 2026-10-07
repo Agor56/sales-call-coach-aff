@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Runs the CLI from anywhere (works through the `coach` link in ~/.local/bin).
+# Not relying on .pth files: macOS can flag them hidden, which Python 3.12+ ignores.
+SELF="$(readlink -f "$0" 2>/dev/null || python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$0")"
+cd "$(dirname "$SELF")" && PYTHONPATH=src exec uv run --quiet python -m coach "$@"

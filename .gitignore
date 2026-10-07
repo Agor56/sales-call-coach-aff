@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+recordings/
+reports/*
+!reports/.gitkeep
+!reports/SYNTHETIC-*.md
+dashboard/data/
+dashboard/.dashboard.log
