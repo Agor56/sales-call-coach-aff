@@ -104,8 +104,20 @@ class ElevenLabsClient:
                 return agents
             cursor = page["next_cursor"]
 
-    def get_agent(self, agent_id: str) -> dict:
-        return self._request("GET", f"/v1/convai/agents/{agent_id}")
+    def get_agent(self, agent_id: str, version_id: str | None = None) -> dict:
+        params = {"version_id": version_id} if version_id else None
+        return self._request("GET", f"/v1/convai/agents/{agent_id}", params=params)
+
+    def list_branches(self, agent_id: str) -> list[dict]:
+        return self._request("GET", f"/v1/convai/agents/{agent_id}/branches").get("results", [])
+
+    def branch_versions(self, agent_id: str, branch_id: str) -> list[dict]:
+        """Every version saved on the branch, newest first: id, time_committed_secs, parents.in_branch_parent_id."""
+        return self._request("GET", f"/v1/convai/agents/{agent_id}/branches/{branch_id}").get("most_recent_versions", [])
+
+    def get_pronunciation_dictionary(self, dictionary_id: str) -> dict:
+        """Latest version id + its rules."""
+        return self._request("GET", f"/v1/pronunciation-dictionaries/{dictionary_id}")
 
     def update_agent_criteria(self, agent_id: str, criteria: list[dict], version_description: str) -> dict:
         body = {"platform_settings": {"evaluation": {"criteria": criteria}},

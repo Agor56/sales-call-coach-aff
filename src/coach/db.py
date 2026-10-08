@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import fcntl
 import json
+import os
 import sqlite3
+import sys
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 SCHEMA_VERSION = 5
@@ -113,6 +116,20 @@ CREATE TABLE IF NOT EXISTS experiments (
     stopped_at        INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS changes (     -- what changed on the agents, and when it went live (see changes.py)
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    ref               TEXT NOT NULL UNIQUE,  -- agent:<id>:<version> | dict:<id>:<version> | manual:<time>
+    kind              TEXT NOT NULL,         -- agent | dictionary | manual
+    agent_keys        TEXT NOT NULL,         -- JSON list
+    at                INTEGER NOT NULL,      -- go-live time
+    title             TEXT NOT NULL,
+    details           TEXT,                  -- JSON list of {label, summary, before, after, added, removed}
+    source            TEXT NOT NULL,         -- detected | you | coach recommendation
+    recommendation    TEXT,                  -- JSON: report_created_at, new_text, watch_metric, watch_direction
+    created_at        INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS change_scan_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS reports (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     analysis_id       INTEGER NOT NULL REFERENCES analyses(id),
@@ -206,11 +223,20 @@ def process_lock(db_path: Path):
     """One writer at a time (e.g. `coach watch` running while you call `coach pilot`)."""
     lock_path = db_path.with_suffix(".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "w") as fh:
+    with open(lock_path, "a+") as fh:
         try:
             fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise SystemExit("Another coach command is writing to the database (is `coach watch` running?).")
+            fh.seek(0)
+            holder = fh.read().strip()
+            raise SystemExit("Another coach command is writing to the database"
+                             + (f": {holder}" if holder else " (is `coach watch` running?)")
+                             + ".\nWait for it to finish (the daily 07:00 refresh can take a while), then try again.")
+        fh.seek(0)
+        fh.truncate()
+        fh.write(f"`{' '.join(['coach', *sys.argv[1:]]) if 'daily' not in sys.argv[0] else 'daily 07:00 refresh'}`"
+                 f" started {datetime.now():%H:%M} (pid {os.getpid()})")
+        fh.flush()
         try:
             yield
         finally:

@@ -42,6 +42,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { Key } from './i18n'
 import { CoachContext, PERIODS, dateTime, useCoach, useCoachState, type PageKey } from './lib'
+import { ChangesPage } from './changes-page'
 import { CostsPage } from './costs-page'
 import { AgentsPage, AnalyticsPage, OpenersPage, OverviewPage, ReportPage } from './pages'
 
@@ -60,6 +61,7 @@ const NAV: { section: Key; items: { key: PageKey; label: Key; icon: IconType }[]
     section: 'nav.change',
     items: [
       { key: 'report', label: 'nav.report', icon: FileIcon as IconType },
+      { key: 'changes', label: 'nav.changes', icon: FileIcon as IconType },
       { key: 'openers', label: 'nav.openers', icon: SidebarAiIcon as IconType },
     ],
   },
@@ -75,6 +77,7 @@ const TITLES: Record<PageKey, Key> = {
   agents: 'nav.agents',
   report: 'nav.report',
   openers: 'nav.openers',
+  changes: 'nav.changes',
   costs: 'nav.costs',
 }
 
@@ -245,6 +248,11 @@ function CoachTopbar() {
             <span className="whitespace-nowrap">
               {t('top.dataFrom')} <span className="text-foreground">{data ? dateTime(data.generated_at, lang) : '—'}</span>
             </span>
+            {data && Date.now() / 1000 - data.generated_at > 26 * 3600 && (
+              <span className="whitespace-nowrap font-medium" style={{ color: 'var(--chart-5)' }}>
+                {t('top.stale')}
+              </span>
+            )}
             <span className="size-2 shrink-0 rounded-full bg-muted-foreground/50" />
             <span className="truncate">
               {t('top.grader')} <span className="text-foreground">{data?.grader ?? '—'}</span>
@@ -304,6 +312,7 @@ function PageBody() {
   if (page === 'agents') return <AgentsPage />
   if (page === 'openers') return <OpenersPage />
   if (page === 'report') return <ReportPage />
+  if (page === 'changes') return <ChangesPage />
   if (page === 'costs') return <CostsPage />
   return <OverviewPage />
 }

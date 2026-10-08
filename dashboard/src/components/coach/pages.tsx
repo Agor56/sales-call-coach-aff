@@ -22,6 +22,7 @@ import {
   DetailTag,
 } from '@/components/watermelon/capitalio-dashboard/components/capitalio/shared'
 import { cn } from '@/lib/utils'
+import { VERDICT_COLOR, useVerdictText } from './changes-page'
 import { BEHAVIOUR, junkReason, type Key } from './i18n'
 import {
   STAGE_META,
@@ -36,7 +37,9 @@ import {
   usd,
   useCoach,
   usePeriodData,
+  rateChange,
   type Comparison,
+  type RateChange,
   type Funnel,
   type Tech,
 } from './lib'
@@ -57,7 +60,27 @@ function Empty({ text }: { text: string }) {
   return <div className="py-6 text-sm text-muted-foreground">{text}</div>
 }
 
-function Stat({ title, value, sub, tone, hint }: { title: string; value: string; sub?: string; tone?: 'good' | 'bad'; hint?: string }) {
+function Change({ c, higherIsBetter }: { c: RateChange; higherIsBetter: boolean }) {
+  const { t, period } = useCoach()
+  if (!c) return <div className="text-xs text-muted-foreground">{t('delta.none')}</div>
+  const up = c.pts > 0
+  const better = up === higherIsBetter
+  const color = !c.real ? 'var(--muted-foreground)' : better ? GOOD : BAD
+  const text = t('delta.vs', {
+    arrow: Math.abs(c.pts) < 0.05 ? '=' : up ? '▲' : '▼',
+    d: `${up ? '+' : ''}${c.pts.toFixed(1)}`,
+    period: t(`prev.${period}` as Key),
+    before: pct(c.before),
+  })
+  return (
+    <div className="text-xs font-medium leading-snug" style={{ color }}>
+      <span dir="ltr">{text}</span>
+      {!c.real ? <span className="font-normal"> · {t('delta.noise')}</span> : null}
+    </div>
+  )
+}
+
+function Stat({ title, value, sub, tone, hint, change }: { title: string; value: string; sub?: string; tone?: 'good' | 'bad'; hint?: string; change?: ReactNode }) {
   return (
     <DashboardCard className="flex min-h-36 flex-col justify-between gap-4">
       <h2 className="truncate text-base font-normal leading-6 text-muted-foreground">{title}</h2>
@@ -70,6 +93,7 @@ function Stat({ title, value, sub, tone, hint }: { title: string; value: string;
         ) : null}
       </div>
       {hint ? <div className="text-xs leading-snug text-muted-foreground">{hint}</div> : null}
+      {change}
     </DashboardCard>
   )
 }
@@ -81,18 +105,50 @@ function Th({ children }: { children: ReactNode }) {
 // =============================================================================== Overview
 export function OverviewPage() {
   const p = usePeriodData()
-  const { data, setPage, t, lang, done } = useCoach()
+  const { data, setPage, t, lang, done, selectedAgents } = useCoach()
+  const verdictText = useVerdictText()
   if (!p || !data) return <Page><Empty text={t('state.noCalls')} /></Page>
   const f = p.funnel.all
+  const pf = p.previous?.funnel
   const r = data.report
+  const hc = f.human_connected
+  const phc = pf?.human_connected ?? 0
+  const range = (a: number, b: number) => `${dateTime(a, lang)} → ${dateTime(b, lang)}`
+  const latest = (data.changes ?? []).find((c) => !selectedAgents || c.agent_keys.some((k) => selectedAgents.includes(k)))
   return (
     <Page>
+      {latest ? (
+        <button
+          type="button"
+          onClick={() => setPage('changes')}
+          className="flex min-w-0 flex-wrap items-center gap-2 text-start text-sm text-muted-foreground hover:text-foreground"
+        >
+          <span>{t('ch.latest')}</span>
+          <span className="truncate font-medium text-foreground" dir="auto">{latest.title}</span>
+          <DetailTag color={latest.score ? VERDICT_COLOR[latest.score.verdict] : 'var(--muted-foreground)'}>{verdictText(latest)}</DetailTag>
+          <span>{t('ch.seeAll')}</span>
+        </button>
+      ) : null}
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+        <span>
+          {t('cmp.now')} <span className="font-medium text-foreground" dir="ltr">{range(p.window.since_unix, p.window.until_unix)}</span>
+        </span>
+        <span>
+          {t('cmp.before')}{' '}
+          {p.previous ? (
+            <span className="font-medium text-foreground" dir="ltr">{range(p.previous.since_unix, p.previous.until_unix)}</span>
+          ) : (
+            <span>{t('delta.none')}</span>
+          )}
+        </span>
+      </div>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           title={t('ov.calls')}
           value={num(f.total)}
           sub={t('ov.pickedUpN', { n: num(f.human_connected) })}
           hint={t('ov.dialsReached', { p: pct(ratio(f.human_connected, f.total)) })}
+          change={<Change higherIsBetter c={pf ? rateChange(hc, f.total, phc, pf.total) : null} />}
         />
         <Stat
           title={t('ov.silent')}
@@ -100,6 +156,7 @@ export function OverviewPage() {
           sub={t('ov.nCalls', { n: num(f.stages.no_reply) })}
           tone="bad"
           hint={t('ov.goneAfter', { s: f.no_reply_median_secs ?? '—' })}
+          change={<Change higherIsBetter={false} c={pf ? rateChange(f.stages.no_reply, hc, pf.stages.no_reply, phc) : null} />}
         />
         <Stat
           title={t('ov.conversations')}
@@ -107,6 +164,7 @@ export function OverviewPage() {
           sub={t('ov.nCalls', { n: num(f.stages.engaged) })}
           tone="good"
           hint={t('ov.convHint')}
+          change={<Change higherIsBetter c={pf ? rateChange(f.stages.engaged, hc, pf.stages.engaged, phc) : null} />}
         />
         <Stat
           title={t('ov.bookings')}
@@ -118,6 +176,7 @@ export function OverviewPage() {
               ? t('ov.bookingsHintChecked', { n: num(f.booked), p: pct(ratio(f.booking_tool_calls, f.human_connected), 2) })
               : t('ov.bookingsHint', { p: pct(ratio(f.booking_tool_calls, f.human_connected), 2) })
           }
+          change={<Change higherIsBetter c={pf ? rateChange(f.booking_tool_calls, hc, pf.booking_tool_calls, phc) : null} />}
         />
       </div>
 
@@ -271,7 +330,7 @@ function AgentsTable({ className }: { className?: string }) {
                 <td className="px-3 py-3" style={{ color: worseSilent ? BAD : undefined }}>{pct(f.no_reply_rate)}</td>
                 <td className="px-3 py-3" style={{ color: worseEngaged ? BAD : undefined }}>{pct(f.engaged_rate)}</td>
                 <td className="px-3 py-3">{num(f.booking_tool_calls)}</td>
-                <td className="px-3 py-3" style={{ color: f.booked_disqualified ? BAD : undefined }}>{num(f.booked_disqualified)}</td>
+                <td className="px-3 py-3" style={{ color: f.booked_disqualified ? WARN : undefined }}>{num(f.booked_disqualified)}</td>
                 <td className="px-3 py-3" dir="ltr">{secs(tech?.median_response_secs)}</td>
                 <td className="px-3 py-3" style={{ color: slow ? BAD : undefined }}>{pct(tech?.slow_call_rate, 0)}</td>
               </tr>
@@ -377,7 +436,7 @@ export function AnalyticsPage() {
               <BarChart data={junk} layout="vertical" margin={{ left: 8, right: 16 }}>
                 <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} tick={AXIS_TICK} reversed={lang === 'he'} />
                 <YAxis type="category" dataKey="name" width={240} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--foreground)' }} orientation={lang === 'he' ? 'right' : 'left'} />
-                <Tooltip cursor={false} content={<DashboardChartTooltip names={{ value: t('junk.series') }} colors={{ value: BAD }} />} />
+                <Tooltip cursor={false} content={<DashboardChartTooltip names={{ value: t('junk.series') }} colors={{ value: WARN }} />} />
                 <Bar dataKey="value" fill={BAD} radius={4} barSize={18} />
               </BarChart>
             </ResponsiveContainer>

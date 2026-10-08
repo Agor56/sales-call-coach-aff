@@ -212,6 +212,8 @@ def load_settings(root: Path | None = None, config_name: str = "config/coach.tom
     if source not in SOURCES:
         raise ConfigError(f"Account '{acct_key}': source must be one of {', '.join(SOURCES)}, not '{source}'")
     outcome = dict(acct["outcome"])
+    if isinstance(outcome.get("booking_tool_prefix"), list):   # several success tools, e.g. voice + chat agents
+        outcome["booking_tool_prefix"] = tuple(outcome["booking_tool_prefix"])
     if outcome.get("rule") == "criterion":
         if outcome.get("criterion") not in checklist.ids:
             raise ConfigError(f"Account '{acct_key}': [outcome] criterion '{outcome.get('criterion')}' is not in {acct['checklist']}")
@@ -254,3 +256,9 @@ def load_settings(root: Path | None = None, config_name: str = "config/coach.tom
         profile=(root / acct["profile"]).read_text(encoding="utf-8")
         if acct.get("profile") and (root / acct["profile"]).is_file() else "",
     )
+
+
+def booking_prefixes(outcome: dict) -> tuple[str, ...]:
+    """[outcome] booking_tool_prefix as a tuple — it may be one prefix or a list (str.startswith accepts either)."""
+    p = outcome["booking_tool_prefix"]
+    return tuple(p) if isinstance(p, (list, tuple)) else (p,)

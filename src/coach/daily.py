@@ -1,9 +1,12 @@
-"""Daily refresh (what launchd runs at 07:00): for every client account — discover, review, analyze, report, export.
+"""Daily refresh (what launchd runs at 07:00): for every client account — discover, review, analyze, report, scan for agent
+changes, export.
 A failure in one client doesn't stop the others. Logs to data/logs/daily-YYYY-MM-DD.log (kept 30 days)."""
 from __future__ import annotations
 
 import contextlib
 import io
+import os
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -11,7 +14,8 @@ from pathlib import Path
 
 from .config import PROJECT_ROOT, list_accounts
 
-STEPS = [["discover", "--days", "2"], ["review", "--limit", "400", "--days", "2"], ["analyze", "--days", "7"], ["report"]]
+STEPS = [["discover", "--days", "2"], ["review", "--limit", "400", "--days", "2"], ["analyze", "--days", "7"], ["report"],
+         ["changes", "scan"], ["export"]]   # changes after the report: a failed scan never costs the day's report
 
 
 def main() -> int:
@@ -21,6 +25,9 @@ def main() -> int:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"daily-{datetime.now():%Y-%m-%d}.log"
     failures = 0
+    # keep the Mac from idle-sleeping until this process ends (a closed lid on battery still wins)
+    with contextlib.suppress(OSError):
+        subprocess.Popen(["/usr/bin/caffeinate", "-i", "-s", "-w", str(os.getpid())])
     with open(log_path, "a", encoding="utf-8") as log:
         def write(msg: str) -> None:
             log.write(msg + "\n")
@@ -50,11 +57,21 @@ def main() -> int:
                     coach(["--account", acct, "export"])   # dashboard still shows what we have
                 write(f"!!! {acct}: a step failed — dashboard refreshed with existing data")
         write(f"=== done {datetime.now():%H:%M:%S}  ({failures} client(s) with errors)")
+    _notify("Dashboard updated" if not failures else f"{failures} client(s) failed — dashboard shows older data",
+            f"Daily refresh finished {datetime.now():%H:%M}")
     cutoff = time.time() - 30 * 86400
     for old in log_dir.glob("daily-*.log"):
         if old.stat().st_mtime < cutoff:
             old.unlink()
     return 1 if failures else 0
+
+
+def _notify(message: str, title: str) -> None:
+    """macOS notification, so you know the refresh finished without opening a log."""
+    q = lambda s: s.replace("\\", "").replace('"', "'")
+    script = f'display notification "{q(message)}" with title "Sales Call Coach" subtitle "{q(title)}"'
+    with contextlib.suppress(OSError):
+        subprocess.run(["/usr/bin/osascript", "-e", script], capture_output=True, timeout=10)
 
 
 if __name__ == "__main__":

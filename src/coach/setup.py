@@ -124,8 +124,12 @@ def ask_about_business(name: str, source: str, ask, log) -> str:
     return prof.profile_markdown(name, dict(SOURCES)[source], answers, file_text, file_name)
 
 
-def choose_agents(path: Path, client, ask, log) -> tuple[str | None, str]:
-    """Lists the ElevenLabs agents, adds the chosen ones. Returns (booking tool name or None, the first agent's script)."""
+SKIP_TOOLS = ("end_call", "skip_turn", "language_detection", "voicemail_detection", "transfer_to_agent", "transfer_to_number")
+
+
+def choose_agents(path: Path, client, ask, log) -> tuple[list[str] | None, str]:
+    """Lists the ElevenLabs agents, adds the chosen ones. Returns (the tools that mean a conversation worked — one per kind
+    of agent, e.g. a booking tool for calls and a 'send lead to CRM' tool for chats — or None, the first agent's script)."""
     from .account_edit import add_agent, remove_agent
     from .cli import _slug
 
@@ -150,16 +154,26 @@ def choose_agents(path: Path, client, ask, log) -> tuple[str | None, str]:
         add_agent(path, agent_id=a["agent_id"], key=key, label=a.get("name") or a["agent_id"])
     remove_agent(path, "main")                                     # the template's placeholder
 
-    cfg = client.get_agent(remote[picks[0]]["agent_id"])
-    tools = [t.get("name") for t in ((cfg.get("conversation_config") or {}).get("agent") or {}).get("prompt", {}).get("tools", [])
-             if t.get("name") and t.get("name") not in ("end_call", "skip_turn", "language_detection", "voicemail_detection",
-                                                        "transfer_to_agent", "transfer_to_number")]
-    booking = None
-    if tools:
-        i = _pick(ask, log, "\nWhich of the agent's tools books the meeting? (that's how the coach knows a call worked)",
-                  tools + ["None of these: let the AI judge from the call instead"])
-        booking = tools[i] if i < len(tools) else None
-    return booking, agent_script(cfg)
+    cfgs = [client.get_agent(remote[p]["agent_id"]) for p in dict.fromkeys(picks)]
+    tools = list(dict.fromkeys(
+        t.get("name") for cfg in cfgs
+        for t in ((cfg.get("conversation_config") or {}).get("agent") or {}).get("prompt", {}).get("tools", [])
+        if t.get("name") and t.get("name") not in SKIP_TOOLS))
+    if not tools:
+        return None, agent_script(cfgs[0])
+    log("\nWhich tool means a conversation worked? That's how the coach knows. Pick one per kind of agent, e.g. the "
+        "booking tool for calls and the 'send lead to CRM' tool for chats.")
+    for i, t in enumerate(tools, 1):
+        log(f"  {i}  {t}")
+    log(f"  {len(tools) + 1}  None of these: let the AI judge from the conversation instead")
+    while True:
+        raw = ask("Numbers separated by commas: ").strip()
+        nums = [int(x) for x in re.findall(r"\d+", raw)]
+        if nums and all(1 <= n <= len(tools) + 1 for n in nums):
+            break
+        log("Please type numbers from the list.")
+    booking = [tools[n - 1] for n in dict.fromkeys(nums) if n <= len(tools)]
+    return booking or None, agent_script(cfgs[0])
 
 
 def write_checklist(root: Path, account: str, account_path: Path, profile_text: str, *, booking_tool: bool,
@@ -244,7 +258,8 @@ def run_setup(root: Path | None = None, *, ask=input, ask_secret=getpass.getpass
         except Exception as e:  # noqa: BLE001 — setup still finishes; agents can be added later
             log(f"\nCouldn't read your agents ({e}). Check the key, then run `./coach agents list --all`.")
         if booking:
-            path.write_text(set_line(path.read_text(encoding="utf-8"), "booking_tool_prefix", q(booking)), encoding="utf-8")
+            value = q(booking[0]) if len(booking) == 1 else "[" + ", ".join(q(b) for b in booking) + "]"
+            path.write_text(set_line(path.read_text(encoding="utf-8"), "booking_tool_prefix", value), encoding="utf-8")
     if source == "recordings":
         folder = root / "recordings" / key
         folder.mkdir(parents=True, exist_ok=True)

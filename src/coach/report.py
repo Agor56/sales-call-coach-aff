@@ -57,7 +57,8 @@ REPORT_SCHEMA = {
         "proposed_edit": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["target", "current_text", "new_text", "why", "why_he", "how_to_test", "how_to_test_he"],
+            "required": ["target", "current_text", "new_text", "why", "why_he", "how_to_test", "how_to_test_he",
+                         "watch_metric", "watch_direction"],
             "properties": {
                 "target": {"type": "string", "enum": ["first_message", "system_prompt", "none"]},
                 "current_text": {"type": "string"},
@@ -66,6 +67,8 @@ REPORT_SCHEMA = {
                 "why_he": {"type": "string"},
                 "how_to_test": {"type": "string"},
                 "how_to_test_he": {"type": "string"},
+                "watch_metric": {"type": "string"},
+                "watch_direction": {"type": "string", "enum": ["up", "down"]},
             },
         },
     },
@@ -83,6 +86,12 @@ Rules:
 - Up to three problems, ordered by likely impact on qualified bookings. The funnel (where calls die, e.g. leads hanging up during the opener) counts as a problem if the numbers support it.
 - Only describe an agent's wording if it appears in the supplied first messages or prompt; never guess it.
 - Propose exactly one concrete edit to the first message or system prompt. `current_text` must be copied exactly from the supplied prompt/first message so it can be located; `new_text` is the replacement. Explain how to A/B test it on a separate ElevenLabs branch with a traffic split, and which metric from the statistics should move.
+- Name the ONE number your change should move, for the code that later checks whether it worked: watch_metric is
+  one of silent_rate (picked up, never spoke), conversation_rate, booking_rate, answer_rate, or a checklist criterion
+  id from the statistics; watch_direction is "up" or "down". These two fields are for code, so ids are fine there.
+- "Changes already made" lists what was changed and what happened after (verdict + numbers before → after). Never
+  propose a change that was already made. If one made things worse, don't suggest it again in another form; build on
+  the ones that worked; "too early" means wait — don't propose a competing change to the same part.
 - If the data shows no clear pattern, set no_clear_pattern=true, say so in the headline, and keep the edit modest or target "none".
 - Write for a business owner, not an analyst: never write field names or ids (no "no_reply_rate", "engaged_rate",
   "small_sample", "c1_..."); say it in words and show rates as percentages, e.g. "41% of people who picked up never
@@ -103,6 +112,12 @@ Rules:
 - Evidence quotes must be copied exactly from a single numbered turn of the example transcripts, with that turn's number. Keep quotes short (under 20 words). Never quote the statistics as evidence.
 - Up to three problems, ordered by likely impact on calls ending with a booked next step.
 - There is no script to edit. Propose exactly one concrete change to how the salesperson runs the call: set target to "none", leave current_text empty, put the exact words or step to use in new_text, and in how_to_test say how to try it on the next calls and which metric from the statistics should move.
+- Name the ONE number your change should move, for the code that later checks whether it worked: watch_metric is
+  one of silent_rate (picked up, never spoke), conversation_rate, booking_rate, answer_rate, or a checklist criterion
+  id from the statistics; watch_direction is "up" or "down". These two fields are for code, so ids are fine there.
+- "Changes already made" lists what was changed and what happened after (verdict + numbers before → after). Never
+  propose a change that was already made. If one made things worse, don't suggest it again in another form; build on
+  the ones that worked; "too early" means wait — don't propose a competing change to the same part.
 - If the data shows no clear pattern, set no_clear_pattern=true, say so in the headline, and keep the suggestion modest.
 - Write for a business owner, not an analyst: never write field names or ids; say it in words and show rates as percentages.
 - Write in English and quote the transcripts in their own language. Also give a natural, plain Hebrew version of every text field in its
@@ -132,6 +147,14 @@ def changes_already_made(conn: sqlite3.Connection, settings: Settings) -> list[d
                         "changed_to": d.get("new_text", "")[:600], "source": "marked done in dashboard"})
     except (OSError, ValueError, KeyError):
         pass
+    from .changes import VERDICT_TEXT, scored
+    for c in scored(conn, settings, show_days=35):
+        s = c["score"] or {}
+        moved = [f"{r['label']}: {r['change']['before']:.1%} → {r['change']['now']:.1%}" + (" (noise)" if not r["change"]["real"] else "")
+                 for r in s.get("rows", []) if r.get("change")]
+        out.append({"when": datetime.fromtimestamp(c["at"]).strftime("%Y-%m-%d %H:%M"), "what": c["title"],
+                    "agents": c["agent_keys"], "source": f"change log ({c['source']})",
+                    "result": VERDICT_TEXT.get(s.get("verdict"), "history"), "numbers_before_after": moved[:6]})
     for e in conn.execute("SELECT agent_key, change, started_at, variant_pct FROM experiments ORDER BY id"):
         ch = json.loads(e["change"])
         out.append({"when": datetime.fromtimestamp(e["started_at"]).strftime("%Y-%m-%d"), "what": ch.get("field"),
@@ -161,7 +184,7 @@ def pick_examples(calls: list[dict], payload: dict, max_n: int) -> list[tuple[st
         take(lambda c: c["outcome"] == "failure" and c["criteria"].get(cid) == "failure", 2, f"failed call, {cid}=failure")
         take(lambda c: c["outcome"] == "success" and c["criteria"].get(cid) == "success", 1, f"successful call, {cid}=success")
     take(lambda c: c["stage"] == "early_drop" and not c["booked"], 2, "lead answered then the call ended early")
-    take(lambda c: c["qualification"] == "disqualified", 1, "booked but disqualified (junk booking)")
+    take(lambda c: c["qualification"] == "disqualified", 1, "booked but the numbers need a check")
     take(lambda c: c["outcome"] == "success", 1, "booked + qualified")
     take(lambda c: c["outcome"] == "failure" and c["stage"] == "engaged", 2, "engaged, no qualified booking")
     return list(chosen.items())
@@ -233,7 +256,7 @@ def render_markdown(payload: dict, llm: dict | None, verified: dict, meta: dict)
         out.append(f"## Headline\n\n{llm['headline']}\n")
 
     out.append("## Funnel — where calls end\n")
-    out.append("| Agent | Calls | No connect | Voicemail | Lead silent | Early drop | Engaged | Lead-silent rate* | Booking tool called | Verified booked | Booked+qualified | Junk bookings | Callback-only |")
+    out.append("| Agent | Calls | No connect | Voicemail | Lead silent | Early drop | Engaged | Lead-silent rate* | Booking tool called | Verified booked | Booked+qualified | Needs a check | Callback-only |")
     out.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for key, f in payload["funnel"].items():
         s = f["stages"]
@@ -243,7 +266,7 @@ def render_markdown(payload: dict, llm: dict | None, verified: dict, meta: dict)
                "*Booking tool called* comes from the call list (every call); *verified* / *qualified* need the full call details, "
                "which are fetched for a capped sample. Pending (still processing) calls are left out of the stage columns.\n")
     if payload["disqualification_reasons"]:
-        out.append("Junk-booking reasons: " + ", ".join(f"{k} ×{v}" for k, v in payload["disqualification_reasons"].items()) + "\n")
+        out.append("Why they need a check: " + ", ".join(f"{k} ×{v}" for k, v in payload["disqualification_reasons"].items()) + "\n")
 
     tech = payload.get("technical")
     # recorded meetings have no agent response-time data
@@ -317,7 +340,7 @@ def render_markdown(payload: dict, llm: dict | None, verified: dict, meta: dict)
     out.append("|---|---|---|")
     out.append(f"| Grading | **{payload.get('grader', 'elevenlabs')}** | Answered the {len(payload['comparisons']['all'])} checklist questions "
                f"on {cov['with_checklist']} calls (yes / no / doesn't apply, with confidence) |")
-    out.append("| Numbers | **this program (code, no AI)** | Every count, rate, funnel stage and good/junk booking |")
+    out.append("| Numbers | **this program (code, no AI)** | Every count, rate, funnel stage and good / needs-a-check booking |")
     if meta.get("model"):
         u = meta.get("usage") or {}
         cost = f", ${u['cost_usd']:.4f}" if u.get("cost_usd") is not None else ""
@@ -391,8 +414,8 @@ def build_report(conn: sqlite3.Connection, client: ElevenLabsClient | None, sett
             "## Example transcripts (untrusted call content)\n\n" + "\n\n".join(blocks))
         made = changes_already_made(conn, settings)
         if made:
-            user_content += ("\n\n## Changes already made — do NOT propose any of these again; build on them or pick the next "
-                             "biggest problem\n```json\n" + json.dumps(made, ensure_ascii=False, indent=1) + "\n```")
+            user_content += ("\n\n## Changes already made, and what happened after — do NOT propose any of these again; build on "
+                             "what worked or pick the next biggest problem\n```json\n" + json.dumps(made, ensure_ascii=False, indent=1) + "\n```")
         if len(user_content) > 1_500_000:   # ~0.5M tokens; never truncate silently
             raise SystemExit(f"Report input is {len(user_content):,} chars — too large. Lower [report].max_example_calls.")
         llm, usage = (llm_fn or call_llm)(settings, user_content)
@@ -410,6 +433,11 @@ def build_report(conn: sqlite3.Connection, client: ElevenLabsClient | None, sett
                     verified["rejected"].append({**e, "reason": why})
             verified["problems"].append(ok_list)
         pe = llm["proposed_edit"]
+        from .changes import WATCH_METRICS
+        if pe.get("watch_metric") not in {*WATCH_METRICS, *(c.id for c in settings.checklist.criteria)}:
+            pe["watch_metric"] = None
+        if pe.get("watch_direction") not in ("up", "down"):
+            pe["watch_direction"] = None
         haystack = normalize(first_message if pe["target"] == "first_message" else prompt_text)
         verified["edit_located"] = bool(pe["current_text"].strip()) and normalize(pe["current_text"]) in haystack
 

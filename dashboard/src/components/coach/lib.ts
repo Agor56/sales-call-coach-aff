@@ -71,6 +71,8 @@ export type Version = {
 
 export type Period = {
   window: { since_unix: number; until_unix: number }
+  // the same-length window right before this one (absent when there is no earlier data)
+  previous?: { since_unix: number; until_unix: number; funnel: Funnel; per_agent: Record<string, Funnel> }
   success_definition: string
   grader: string
   funnel: Record<string, Funnel>
@@ -174,14 +176,53 @@ export type CoachData = {
   periods: Partial<Record<PeriodKey, Period>>
   report: Report | null
   experiments: Experiment[]
+  changes?: Change[]
+  change_window_days?: number
   costs?: Costs
 }
 
-export type PeriodKey = '2d' | '7d' | '30d'
-export const PERIODS: PeriodKey[] = ['2d', '7d', '30d']
+// ---- change log: what changed on the agents and what happened to the calls after it
+export type ChangeRow = {
+  metric: string
+  label: string
+  label_he: string | null
+  higher_is_better: boolean
+  watched: boolean
+  change: { now: number; before: number; pts: number; real: boolean; n: number; prev_n: number } | null
+  better: boolean | null
+}
+
+export type Verdict =
+  | 'worked' | 'worse' | 'mixed' | 'no_clear_change' | 'not_clear_yet' | 'too_early' | 'not_enough_calls' | 'no_data_before'
+
+export type Change = {
+  id: number
+  kind: 'agent' | 'dictionary' | 'manual'
+  agent_keys: string[]
+  at: number
+  title: string
+  details: { label: string; summary: string; before?: string; after?: string; added?: string[]; removed?: string[]; added_n?: number; removed_n?: number }[]
+  source: 'detected' | 'you' | 'coach recommendation'
+  recommendation: { report_created_at: number | null; new_text: string; watch_metric: string | null; watch_direction: string | null } | null
+  score: {
+    days: number
+    window_days: number
+    verdict: Verdict
+    final: boolean
+    warning?: boolean
+    before: [number, number]
+    after: [number, number]
+    rows: ChangeRow[]
+    overlaps: { id: number; title: string; at: number }[]
+    calls?: { before: number; after: number }
+  } | null
+}
+
+export type PeriodKey = '1d' | '2d' | '7d' | '30d'
+export const PERIODS: PeriodKey[] = ['1d', '2d', '7d', '30d']
 export type Theme = 'light' | 'dark'
 
-export type PageKey = 'overview' | 'analytics' | 'agents' | 'openers' | 'report' | 'costs'
+export type PageKey = 'overview' | 'analytics' | 'agents' | 'openers' | 'report' | 'changes' | 'costs'
 
 // ---- app state
 type CoachState = {
@@ -356,7 +397,26 @@ export function combinePeriod(p: Period, keys: string[]): Period {
     disqualification_reasons: reasons,
     daily: combineDaily(parts.map((a) => a.daily)),
     versions: p.versions.filter((v) => keys.includes(v.agent)),
+    previous: combinePrevious(p.previous, keys),
   }
+}
+
+function combinePrevious(prev: Period['previous'], keys: string[]): Period['previous'] {
+  const parts = prev ? keys.map((k) => prev.per_agent?.[k]).filter((x): x is Funnel => !!x) : []
+  return prev && parts.length ? { ...prev, funnel: combineFunnel(parts) } : undefined
+}
+
+// ---- "better or worse than before": change of a rate between two windows, and whether it is more than noise
+export type RateChange = { now: number; before: number; pts: number; real: boolean } | null
+
+export function rateChange(yes: number, n: number, prevYes: number, prevN: number, minN = 100): RateChange {
+  if (n < minN || prevN < minN) return null
+  const a = yes / n
+  const b = prevYes / prevN
+  const pooled = (yes + prevYes) / (n + prevN)
+  const se = Math.sqrt(pooled * (1 - pooled) * (1 / n + 1 / prevN))
+  // two-proportion z-test at 95%: smaller moves happen by chance from day to day
+  return { now: a, before: b, pts: (a - b) * 100, real: se > 0 && Math.abs(a - b) / se > 1.96 }
 }
 
 function readStored(key: string): string | null {
@@ -521,7 +581,7 @@ const locale = (lang: Lang) => (lang === 'he' ? 'he-IL' : 'en-GB')
 export const dateShort = (iso: string, lang: Lang = 'en') =>
   new Date(`${iso}T12:00:00`).toLocaleDateString(locale(lang), { day: 'numeric', month: 'short' })
 export const dateTime = (unix: number, lang: Lang = 'en') =>
-  new Date(unix * 1000).toLocaleString(locale(lang), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  new Date(unix * 1000).toLocaleString(locale(lang), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
 /** Hebrew text from the report when the dashboard is in Hebrew and the report has it; English otherwise. */
 export const pick = (lang: Lang, en: string, he?: string) => (lang === 'he' && he ? he : en)

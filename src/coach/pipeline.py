@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import db
-from .config import Agent, Settings
+from .config import Agent, Settings, booking_prefixes
 from .elevenlabs import ElevenLabsClient, NotFoundError, SchemaError
 from .outcome import PENDING_STATUSES, details_from_conversation, funnel_stage
 
@@ -113,22 +113,24 @@ def calls_needing_details(conn: sqlite3.Connection, settings: Settings, agents: 
     """Calls where the lead spoke, or a booking tool ran, and we have no (or stale) details.
     Ordered newest first so a capped run covers the most recent window systematically."""
     placeholders = ",".join("?" * len(agents))
-    prefix = settings.outcome["booking_tool_prefix"]
+    prefixes = booking_prefixes(settings.outcome)
+    any_booking = "(" + " OR ".join("c.tool_names LIKE ?" for _ in prefixes) + ")"
     q = f"""
         SELECT c.* FROM calls c LEFT JOIN details d ON d.conversation_id = c.conversation_id
         WHERE c.agent_id IN ({placeholders})
           AND c.status = 'done'
-          AND (c.message_count >= ? OR c.tool_names LIKE ?)
+          AND (c.message_count >= ? OR {any_booking})
           AND (d.conversation_id IS NULL OR (d.error IS NOT NULL AND d.unavailable = 0)
                OR (d.unavailable = 0 AND d.agent_turns IS NULL))   -- fetched before technical metrics existed
           {"AND c.start_unix >= ?" if since_unix else ""}
-          {"" if booking is None else ("AND c.tool_names LIKE ?" if booking else "AND c.tool_names NOT LIKE ? AND c.funnel_stage = 'engaged'")}
+          {"" if booking is None else (f"AND {any_booking}" if booking else f"AND NOT {any_booking} AND c.funnel_stage = 'engaged'")}
         ORDER BY c.start_unix DESC LIMIT ?"""
-    args: list = [a.agent_id for a in agents] + [settings.funnel["detail_min_messages"], f'%"{prefix}%']
+    likes = [f'%"{p}%' for p in prefixes]
+    args: list = [a.agent_id for a in agents] + [settings.funnel["detail_min_messages"], *likes]
     if since_unix:
         args.append(since_unix)
     if booking is not None:
-        args.append(f'%"{prefix}%')
+        args += likes
     args.append(limit)
     return conn.execute(q, args).fetchall()
 

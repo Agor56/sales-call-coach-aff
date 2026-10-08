@@ -46,9 +46,10 @@ class FakeAgents:
                 {"agent_id": "agent_bbb", "name": "Maya Reminders", "last_7_day_call_count": 5}]
 
     def get_agent(self, agent_id):
+        tool = "book_checkup" if agent_id == "agent_aaa" else "send_lead_to_crm"     # a voice agent and a chat agent
         return {"conversation_config": {"agent": {"first_message": "Hi, Bright Smile Dental, this is Maya!",
                                                   "prompt": {"prompt": "You book check-ups.",
-                                                             "tools": [{"name": "end_call"}, {"name": "book_checkup"}]}}}}
+                                                             "tools": [{"name": "end_call"}, {"name": tool}]}}}}
 
 
 @pytest.fixture
@@ -116,3 +117,14 @@ def test_without_openrouter_key_uses_the_general_checklist(root):
     assert s.checklist.version == "s1" and s.outcome["criterion"] == "s1_next_step_booked"
     acct = tomllib.loads((root / "config" / "accounts" / f"{key}.toml").read_text())
     assert acct["profile"] == "config/business/acme.md"
+
+
+def test_elevenlabs_setup_several_success_tools(root):
+    key = run_setup(root, log=quiet, transport=fake_openrouter([]), make_client=lambda k, n: FakeAgents(),
+                    ask=answers("1", "Bright Smile", "2", "/nonexistent.txt", "n",
+                                "Dental check-ups", "AI agent answers", "A booked check-up", "", "", "English",
+                                "", "1, 2"),
+                    ask_secret=answers("el-secret", "or-secret"))
+    s = load_settings(root, account=key)
+    assert s.outcome["booking_tool_prefix"] == ("book_checkup", "send_lead_to_crm")   # calls and chats both count
+

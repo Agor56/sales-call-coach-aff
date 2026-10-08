@@ -9,7 +9,7 @@ import statistics
 import time
 from collections import Counter, defaultdict
 
-from .config import Agent, Settings
+from .config import Agent, Settings, booking_prefixes
 from .outcome import call_outcome, qualify
 
 STAGES = ["pending", "no_connect", "voicemail", "no_reply", "early_drop", "engaged"]
@@ -83,7 +83,7 @@ def load_calls(conn: sqlite3.Connection, settings: Settings, agents: list[Agent]
             "start_unix": r["start_unix"], "duration": r["duration_secs"] or 0, "message_count": r["message_count"] or 0,
             "stage": stage, "has_details": r["has_details"] is not None, "unavailable": bool(r["unavailable"]),
             "booked": booked, "qualification": qual, "qualification_reason": reason,
-            "booking_attempted": f'"{o["booking_tool_prefix"]}' in (r["tool_names"] or ""),
+            "booking_attempted": any(f'"{p}' in (r["tool_names"] or "") for p in booking_prefixes(o)),
             "lead_hash": r["lead_hash"], "criteria": crit.get(r["conversation_id"], {}),
             "tech": ({"agent_turns": r["agent_turns"], "interruptions": r["interruptions"],
                       "latency_p50": r["latency_p50"], "latency_p90": r["latency_p90"]}
@@ -92,6 +92,19 @@ def load_calls(conn: sqlite3.Connection, settings: Settings, agents: list[Agent]
             "outcome": outcome,
         })
     return calls
+
+
+def no_gaps(conn: sqlite3.Connection, agent_ids: list[str], start: int, end: int, max_gap_days: float = 3) -> bool:
+    """True when stored calls cover [start, end) with no stretch longer than max_gap_days without a call
+    (a weekend is fine; days that were never pulled from ElevenLabs are not)."""
+    if not agent_ids:
+        return False
+    times = [r[0] for r in conn.execute(
+        f"SELECT start_unix FROM calls WHERE agent_id IN ({','.join('?' * len(agent_ids))}) AND start_unix >= ? AND start_unix < ?"
+        " ORDER BY start_unix", [*agent_ids, start, end])]
+    limit = max_gap_days * 86400
+    edges = [start, *times, end]
+    return bool(times) and all(b - a <= limit for a, b in zip(edges, edges[1:]))
 
 
 def _funnel(calls: list[dict]) -> dict:
@@ -190,11 +203,11 @@ def analyze(calls: list[dict], settings: Settings, agents: list[Agent], since_un
         success_definition = (f"success = the grader answered yes to '{name}'. failure = the lead spoke and the answer was no. "
                               "Calls the grader couldn't judge (or hasn't graded yet) count as unknown.")
     elif o.get("rule") == "booked":
-        success_definition = (f"success = the booking tool '{o['booking_tool_prefix']}' returned without error. "
+        success_definition = (f"success = the booking tool '{' / '.join(booking_prefixes(o))}' returned without error. "
                               "failure = the lead spoke but nothing was booked.")
     else:
         success_definition = (
-            f"success = booking tool '{o['booking_tool_prefix']}*' returned without error AND the lead "
+            f"success = booking tool '{'* / '.join(booking_prefixes(o))}*' returned without error AND the lead "
             f"passes the qualification rule (state-guarantee route: annual turnover >= {o['min_annual_turnover_nis']:,} NIS "
             f"and bank not restricted; asset/private route: asset value >= {o['min_asset_value_nis']:,} NIS)"
             + (f", and the numbers are plausible (turnover <= {o['max_annual_turnover_nis']:,} NIS, "

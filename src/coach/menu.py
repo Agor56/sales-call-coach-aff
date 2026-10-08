@@ -95,13 +95,16 @@ def run_menu(run) -> int:
         print(" 7  Change an agent's opener                (A/B test or 100%)")
         print(" 8  Opener test: results / stop")
         print(" 9  Make a spot-check sheet (judge the grader by hand)")
+        print(" c  Changes: what changed on the agents, and did it work?")
+        print(" l  Log a change made outside ElevenLabs   (n8n, lead list, calling hours…)")
         if dash_on:
             print(" o  Open the dashboard in Chrome")
             print(" d  Turn the dashboard OFF               (coach dashboard off)")
         else:
             print(" d  Turn the dashboard ON                (coach dashboard on)")
         print(" u  Update the dashboard after a change  (coach dashboard update)")
-        print(" s  Daily 07:00 refresh: status / run now")
+        print(" r  Refresh now: pull new calls + update the dashboard (~15 min, runs in the background)")
+        print(" s  Daily 07:00 refresh: did it run? / run now")
         print(" n  Set up another business / client       (coach setup)")
         print(" h  Help: the short list of commands")
         print(" 0  Exit")
@@ -180,10 +183,23 @@ def run_menu(run) -> int:
             run(["setup"])
         elif choice == "h":
             run(["help"])
+        elif choice == "r":
+            run(["schedule", "run-now"])
         elif choice == "s":
             run(["schedule", "status"])
             if _ask("\nr = run the daily refresh now, enter = back") == "r":
                 run(["schedule", "run-now"])
+        elif choice == "c":
+            run(["changes", "list"])
+            print("\nScorecard every Sunday 09:00. w = write this week's scorecard now, enter = back")
+            if _ask("") == "w":
+                run(["changes", "scorecard"])
+        elif choice == "l":
+            text = _ask("What changed? (one line)")
+            if text:
+                agents = _ask("Which agents (comma-separated keys, enter = all)")
+                when = _ask('When did it go live? "YYYY-MM-DD HH:MM" (enter = now)')
+                run(["changes", "add", text, *(["--agents", agents] if agents else []), *(["--at", when] if when else [])])
         elif choice == "9":
             n = _ask("How many calls", "15")
             run(["spot-check", "--n", n, "--days", "7"])

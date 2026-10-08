@@ -1,5 +1,6 @@
 """Background jobs on this Mac via launchd (macOS's built-in scheduler — no Docker, nothing to keep open):
   com.salescallcoach.daily      — `python -m coach.daily` every day at 07:00 local time
+  com.salescallcoach.weekly     — `python -m coach.weekly` on Sundays at 09:00: did each agent change work?
   com.salescallcoach.dashboard  — the dashboard on http://localhost:3007, always on, restarted if it stops
 """
 from __future__ import annotations
@@ -15,6 +16,7 @@ from pathlib import Path
 from .config import PROJECT_ROOT
 
 DAILY = "com.salescallcoach.daily"
+WEEKLY = "com.salescallcoach.weekly"
 DASH = "com.salescallcoach.dashboard"
 PORT = 3007
 AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
@@ -54,6 +56,20 @@ def daily_plist(hour: int = 7, minute: int = 0) -> dict:
         "EnvironmentVariables": {"PATH": PATH, "PYTHONPATH": str(PROJECT_ROOT / "src")},
         "StandardOutPath": str(LOG_DIR / "launchd-daily.out"),
         "StandardErrorPath": str(LOG_DIR / "launchd-daily.err"),
+        "ProcessType": "Background",
+    }
+
+
+def weekly_plist(weekday: int = 0, hour: int = 9, minute: int = 0) -> dict:
+    """weekday: 0 = Sunday (launchd)."""
+    return {
+        "Label": WEEKLY,
+        "ProgramArguments": [_uv(), "run", "--quiet", "--project", str(PROJECT_ROOT), "python", "-m", "coach.weekly"],
+        "WorkingDirectory": str(PROJECT_ROOT),
+        "StartCalendarInterval": {"Weekday": weekday, "Hour": hour, "Minute": minute},
+        "EnvironmentVariables": {"PATH": PATH, "PYTHONPATH": str(PROJECT_ROOT / "src")},
+        "StandardOutPath": str(LOG_DIR / "launchd-weekly.out"),
+        "StandardErrorPath": str(LOG_DIR / "launchd-weekly.err"),
         "ProcessType": "Background",
     }
 
@@ -138,13 +154,14 @@ def install(hour: int = 7, minute: int = 0, log=print) -> None:
             break
         time.sleep(0.5)
     log(f"    dashboard: {'running' if _port_open() else 'NOT responding yet — see data/logs/dashboard.err'} on http://localhost:{PORT}")
-    log(f"3/3 Scheduling the daily refresh at {hour:02d}:{minute:02d}…")
+    log(f"3/3 Scheduling the daily refresh at {hour:02d}:{minute:02d} and the weekly scorecard on Sundays at 09:00…")
     _load(DAILY, daily_plist(hour, minute))
+    _load(WEEKLY, weekly_plist())
     log("Done.")
 
 
 def uninstall(log=print) -> None:
-    for label in (DAILY, DASH):
+    for label in (DAILY, WEEKLY, DASH):
         path = _plist_path(label)
         _launchctl("bootout", _domain(), str(path))
         if path.exists():
@@ -152,15 +169,15 @@ def uninstall(log=print) -> None:
         log(f"removed {label}")
 
 
-def run_now() -> None:
-    r = _launchctl("kickstart", f"{_domain()}/{DAILY}")
+def run_now(label: str = DAILY) -> None:
+    r = _launchctl("kickstart", f"{_domain()}/{label}")
     if r.returncode != 0:
-        raise SystemExit("daily job is not installed — run `./coach schedule install` first")
+        raise SystemExit(f"{label} is not installed — run `./coach schedule install` first")
 
 
 def status() -> dict:
     out = {}
-    for label in (DAILY, DASH):
+    for label in (DAILY, WEEKLY, DASH):
         r = _launchctl("print", f"{_domain()}/{label}")
         info = {"installed": _plist_path(label).exists(), "loaded": r.returncode == 0}
         for line in r.stdout.splitlines():
@@ -175,6 +192,8 @@ def status() -> dict:
     out["dashboard_up"] = _port_open()
     logs = sorted(LOG_DIR.glob("daily-*.log")) if LOG_DIR.exists() else []
     out["last_log"] = str(logs[-1]) if logs else None
+    weekly = sorted(LOG_DIR.glob("weekly-*.log")) if LOG_DIR.exists() else []
+    out["last_weekly_log"] = str(weekly[-1]) if weekly else None
     return out
 
 

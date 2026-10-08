@@ -192,6 +192,18 @@ def cmd_doctor(args, settings) -> int:
             print(f"  [{a.key}] {cfg.get('name')} | criteria: {crit} | checklist applied: {is_applied(cfg, settings.checklist)} | booking tools: {booking or 'NONE FOUND'}")
             if not booking:
                 ok = False
+            try:   # the change log reads each agent's version history and the dictionaries it uses
+                branches = client.list_branches(a.agent_id)
+                main_b = next((b for b in branches if (b.get("name") or "").lower() == "main"), branches[0] if branches else None)
+                n = len(client.branch_versions(a.agent_id, main_b["id"])) if main_b else 0
+                dicts = [l["pronunciation_dictionary_id"] for l in
+                         ((cfg.get("conversation_config") or {}).get("tts") or {}).get("pronunciation_dictionary_locators") or []]
+                for d in dicts:
+                    client.get_pronunciation_dictionary(d)
+                print(f"      change log: OK ({n} saved versions readable, {len(dicts)} pronunciation dictionar{'y' if len(dicts) == 1 else 'ies'})")
+            except ElevenLabsError as e:
+                print(f"      change log: CAN'T READ agent history / dictionaries — give the key read access ({e})")
+                ok = False
         try:
             page = client.list_conversations_page(agent_id=settings.agents[0].agent_id, after_unix=int(time.time()) - 86400,
                                                   before_unix=None, page_size=1, cursor=None, criteria_ids=[])
@@ -547,6 +559,43 @@ def cmd_export(args, settings, conn) -> int:
     return 0
 
 
+def cmd_changes(args, settings, conn) -> int:
+    from . import changes as chg
+    if args.action == "scan":
+        client = _client(settings) if settings.source == "elevenlabs" else None
+        new = chg.scan(conn, settings, client)
+        print(f"changes: {len(new)} new" if new else "changes: nothing new")
+        return 0
+    if args.action == "add":
+        if not args.text:
+            raise ConfigError('say what changed, e.g. coach changes add "n8n: callbacks now retry twice" --agents main')
+        at = int(datetime.strptime(args.at, "%Y-%m-%d %H:%M").timestamp()) if args.at else None
+        keys = [k.strip() for k in args.agents.split(",")] if args.agents else None
+        try:
+            cid = chg.add_manual(conn, settings, args.text, keys, at)
+        except ValueError as e:
+            raise ConfigError(str(e))
+        print(f"logged change #{cid}: {args.text}")
+        return 0
+    if args.action == "remove":
+        if not args.id:
+            raise ConfigError("which change? --id N (see `coach changes list`)")
+        print("removed" if chg.remove(conn, args.id) else f"no change #{args.id}")
+        return 0
+    if args.action == "scorecard":
+        path = settings.reports_dir / f"scorecard-{datetime.now():%Y%m%d-%H%M%S}.md"
+        counts = chg.scorecard(conn, settings, path)
+        print(f"scorecard written: {path}")
+        print("verdicts: " + (", ".join(f"{chg.VERDICT_TEXT[k]} ×{v}" for k, v in counts.items()) or "no changes in the last 4 weeks"))
+        return 0
+    for c in chg.scored(conn, settings):
+        s = c["score"]
+        v = chg.VERDICT_TEXT[s["verdict"]] + (f" (day {chg.day_of(s)} of {chg.WINDOW_DAYS})" if s["verdict"] == "too_early" else "") if s else "history"
+        print(f"#{c['id']:<4} {datetime.fromtimestamp(c['at']):%a %d %b %H:%M}  [{', '.join(c['agent_keys'])}]  {c['title']}\n"
+              f"       {c['source']} · {v}")
+    return 0
+
+
 def cmd_watch(args, settings, conn) -> int:
     agents = settings.select_agents(args.agent)
     print(f"watching {', '.join(a.key for a in agents)} every {args.interval}s — Ctrl+C to stop. "
@@ -581,9 +630,13 @@ def cmd_schedule(args) -> int:
         sch.run_now()
         print("Daily refresh started in the background. Follow it with `./coach schedule status`.")
         return 0
+    if args.action == "run-weekly":
+        sch.run_now(sch.WEEKLY)
+        print("Weekly scorecard started in the background — a notification says when it's done.")
+        return 0
     st = sch.status()
-    names = {sch.DAILY: f"Daily refresh (07:00)", sch.DASH: "Dashboard (always on)"}
-    for label in (sch.DAILY, sch.DASH):
+    names = {sch.DAILY: "Daily refresh (07:00)", sch.WEEKLY: "Weekly scorecard (Sun 09:00)", sch.DASH: "Dashboard (always on)"}
+    for label in (sch.DAILY, sch.WEEKLY, sch.DASH):
         i = st[label]
         state = "not installed" if not i["installed"] else ("loaded" if i["loaded"] else "installed but not loaded")
         extra = ", ".join(f"{k} {i[k]}" for k in ("state", "runs", "last_exit") if k in i)
@@ -593,6 +646,8 @@ def cmd_schedule(args) -> int:
         print(f"\nLast daily log: {st['last_log']}")
         tail = open(st["last_log"], encoding="utf-8").read().splitlines()[-8:]
         print("\n".join("  " + l for l in tail))
+    if st.get("last_weekly_log"):
+        print(f"\nLast weekly scorecard log: {st['last_weekly_log']}")
     return 0
 
 
@@ -791,7 +846,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("checklist", help="write a new checklist for this account from its business profile")
     sp.add_argument("action", choices=["generate"])
     sp = sub.add_parser("schedule", help="daily 07:00 refresh + always-on dashboard (macOS launchd)")
-    sp.add_argument("action", choices=["install", "uninstall", "status", "run-now"])
+    sp.add_argument("action", choices=["install", "uninstall", "status", "run-now", "run-weekly"])
     sp.add_argument("--hour", type=int, default=7)
     sp.add_argument("--minute", type=int, default=0)
     sp = sub.add_parser("agents", help="list / add / remove / pause / resume the agents of the current account")
@@ -846,6 +901,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--name")
     sp.add_argument("--apply", action="store_true")
     sub.add_parser("export", help="write the dashboard data file for the current client")
+    sp = sub.add_parser("changes", help="change log: what changed on the agents and whether it worked")
+    sp.add_argument("action", nargs="?", default="list", choices=["list", "scan", "add", "remove", "scorecard"])
+    sp.add_argument("text", nargs="?", help='add: what changed, e.g. "n8n: callbacks retry twice"')
+    sp.add_argument("--agents", help="add: agent keys, comma-separated (default: all agents of the client)")
+    sp.add_argument("--at", help='add: when it went live, "YYYY-MM-DD HH:MM" (default: now)')
+    sp.add_argument("--id", type=int, help="remove: change number")
     sp = sub.add_parser("watch"); agent_opt(sp)
     sp.add_argument("--interval", type=int, default=900)
     sp.add_argument("--limit", type=int, default=200, help="max detail/backfill calls per cycle")
@@ -896,7 +957,7 @@ def main(argv: list[str] | None = None) -> int:
         handlers = {"discover": cmd_discover, "pilot": cmd_pilot, "review": cmd_review, "analyze": cmd_analyze,
                     "report": cmd_report, "watch": cmd_watch, "compare-graders": cmd_compare_graders,
                     "spot-check": cmd_spot_check, "experiment": cmd_experiment,
-                    "opener": cmd_opener, "export": cmd_export}
+                    "opener": cmd_opener, "export": cmd_export, "changes": cmd_changes}
         conn = db.connect(settings.db_path)
         with db.process_lock(settings.db_path):
             return handlers[args.cmd](args, settings, conn)

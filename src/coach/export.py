@@ -9,10 +9,11 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from .analysis import analyze, load_calls
+from .analysis import _funnel, analyze, load_calls, no_gaps
+from .changes import WINDOW_DAYS, scored
 from .config import Settings
 
-PERIODS = {"2d": 2, "7d": 7, "30d": 30}
+PERIODS = {"1d": 1, "2d": 2, "7d": 7, "30d": 30}
 
 
 def _daily(calls: list[dict]) -> list[dict]:
@@ -100,6 +101,7 @@ def build_export(conn: sqlite3.Connection, settings: Settings) -> dict:
     now = int(time.time())
     agents = settings.select_agents(None)
     periods = {}
+    ids = [a.agent_id for a in agents]
     for key, days in PERIODS.items():
         since = now - days * 86400
         calls = load_calls(conn, settings, agents, since, now)
@@ -123,6 +125,16 @@ def build_export(conn: sqlite3.Connection, settings: Settings) -> dict:
                 "disqualification_reasons": pa["disqualification_reasons"],
                 "daily": _daily(sub),
             }
+        # the same-length window right before, so the dashboard can say "better / worse than before"
+        prev_since = since - days * 86400
+        # only when neither window has a hole in the stored history — a half-empty window would mislead
+        covered = no_gaps(conn, ids, prev_since, since) and no_gaps(conn, ids, since, now)
+        prev_calls = load_calls(conn, settings, agents, prev_since, since) if covered else []
+        if prev_calls:
+            p["previous"] = {"since_unix": prev_since, "until_unix": since,
+                             "funnel": _funnel(prev_calls),
+                             "per_agent": {a.key: _funnel(sub) for a in agents
+                                           if (sub := [c for c in prev_calls if c["agent_key"] == a.key])}}
         periods[key] = p
     rep = conn.execute("SELECT * FROM reports WHERE status='ok' AND llm_json IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
     exps = [dict(r) for r in conn.execute("SELECT id, agent_key, name, change, variant_pct, started_at, stopped_at FROM experiments ORDER BY id")]
@@ -141,6 +153,9 @@ def build_export(conn: sqlite3.Connection, settings: Settings) -> dict:
                     "usage": json.loads(rep["usage"]) if rep["usage"] else None, **json.loads(rep["llm_json"])}
                    if rep else None),
         "experiments": exps,
+        "changes": [{k: c[k] for k in ("id", "kind", "agent_keys", "at", "title", "details", "source", "recommendation", "score")}
+                    for c in scored(conn, settings, now)],
+        "change_window_days": WINDOW_DAYS,
         "costs": {**build_costs(conn), "openrouter": openrouter_balance(settings)},
     }
 

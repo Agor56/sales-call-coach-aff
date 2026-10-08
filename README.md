@@ -78,17 +78,42 @@ and that honour the JSON schema.
 
 `./coach dashboard on` builds it once (a few minutes the first time) and runs it at `http://localhost:3007`.
 `./coach` → **d** refreshes the data and opens it. It only runs on your computer.
-Pages: **Overview** (calls, silent rate, conversations, bookings good/junk, daily chart, where calls end, agents, next fix) ·
-**What works** (the behaviours in won vs lost calls, answer time & interruptions, junk reasons) · **Agents** ·
-**Fix next** (the report with verified quotes and the one suggested change) · **Opener tests** (every change + before/after by agent version).
+Pages: **Overview** (calls, silent rate, conversations, bookings good / needs a check, daily chart, where calls end, agents,
+next fix, latest change) · **What works** (the behaviours in won vs lost calls, answer time & interruptions, why bookings
+need a check) · **Agents** · **Fix next** (the report with verified quotes and the one suggested change) ·
+**Changes & results** (every change to the agents and whether it worked, see below) · **Opener tests**.
+
+Periods: last 24 hours, 2, 7 and 30 days. Each number shows the change against the same-length period right before it
+(exact dates and weekdays shown on top), tested against day-to-day noise: green/red only when the move is bigger than
+chance (95%), otherwise grey "normal noise". A period is compared only when neither window has a hole in the stored calls.
+A red warning appears when the data is more than a day old.
 Data file: `dashboard/data/<client>.json`, written by `./coach export` (also after every `./coach report`).
 It runs from a standalone build (`dashboard/.next/standalone`), and `node_modules` (~600 MB) is deleted after each build.
 After changing dashboard code, `coach dashboard update` downloads it again, rebuilds, restarts and deletes it.
 
 ## Daily refresh (macOS)
 
-`./coach schedule install` refreshes every account at 07:00 (discover → grade → analyze → report) and keeps the dashboard
-always on, using macOS launchd. On Linux, run `uv run python -m coach.daily` from cron instead.
+`./coach schedule install` refreshes every account at 07:00 (discover → grade → analyze → report → scan for agent changes)
+and keeps the dashboard always on, using macOS launchd. It keeps the Mac awake while it runs and sends a notification when
+it's done. If the Mac sleeps at 07:00, the run happens when it wakes up. `./coach` → **r** runs the same refresh now.
+On Sundays at 09:00 it also writes the weekly scorecard (below). On Linux, run `uv run python -m coach.daily` (daily) and
+`uv run python -m coach.weekly` (weekly) from cron instead.
+
+## Did the change work? (change log + weekly scorecard)
+
+Every morning the coach reads each ElevenLabs agent's version history and the pronunciation dictionaries it uses, and logs
+what changed in plain words: prompt sections added or removed, opener, model, temperature, voice, tools. Saves made within
+30 minutes count as one change, and the same edit on several agents is one change. When the text of a suggestion from the
+report appears in the agent, the change is marked as the coach's recommendation. Changes made outside ElevenLabs (a
+workflow, the lead list, calling hours) you log yourself: `./coach` → **l**, or `./coach changes add "…" --at "YYYY-MM-DD HH:MM"`.
+
+Each change is scored on the calls of the same agents: the days before it vs the same number of days after it (7, stretched
+to 14 when the first week isn't clear), with the same noise test. Verdicts: *worked*, *made it worse*, *mixed*, *no clear
+change*, *not clear yet*, *too early (day n of 7)*, *not enough calls*, or *can't judge* (holes in the data before it). When
+other changes hit the same agents at the same time, that's flagged, since their effects can't be separated. The scorecard
+(`reports/<client>/scorecard-*.md`) is written every Sunday at 09:00 with a notification; the dashboard page updates daily.
+The report writer is told these results, so it builds on what worked and doesn't suggest a failed change again; each
+suggestion also names the one number it should move. Fireflies / recordings accounts have no agent history: log changes by hand.
 
 ## Client accounts
 
@@ -145,6 +170,9 @@ Fireflies accounts:
 | `./coach compare-graders` | Agreement between ElevenLabs and Jev on the same calls, plus a table of disagreements for you to judge | free |
 | `./coach spot-check --n 15 [--grader jev]` | Sheet of graded calls (redacted transcript + answers) to tick ✔/✘ by hand | ElevenLabs reads |
 | `./coach watch --interval 900` | discover + review + analyze in a loop while the process runs | as above |
+| `./coach changes [list\|scan\|scorecard]` | Change log with verdicts / scan agents for changes now / write the scorecard now | free |
+| `./coach changes add "…" [--agents a,b] [--at "YYYY-MM-DD HH:MM"]` | Log a change made outside ElevenLabs | free |
+| `./coach schedule status\|run-now\|run-weekly` | Did the jobs run (and the end of their logs) / start the daily refresh / start the weekly scorecard | as above |
 
 ## Choosing a grader (bake-off)
 
@@ -167,7 +195,10 @@ Fireflies accounts:
 **Outcome** (per account, `[outcome]`):
 - **success**: the booking tool returned without error (`rule = "booked"`), optionally **and** the booking passes a
   qualification rule on the tool's parameters (turnover / asset minimums, see `demo.toml`).
-- **failure**: the lead spoke but nothing was booked, or the booking is disqualified ("junk booking").
+- **failure**: the lead spoke but nothing was booked, or the booking is disqualified ("needs a check": numbers that can't be
+  right, usually mis-heard).
+- Several actions can count as success: `booking_tool_prefix = ["book_", "send_lead_to_crm"]`, e.g. a booked call for
+  voice agents and a lead sent to the CRM for chat agents. The setup wizard lets you pick several.
 - **unknown**: a fast-track callback booked with no profile data, profile data that can't be parsed, or the transcript is
   unavailable. Unknown calls are counted but kept out of comparisons.
 

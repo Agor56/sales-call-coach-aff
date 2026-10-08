@@ -62,7 +62,7 @@ def calls_needed_per_arm(baseline: float, min_change: float) -> int:
     return math.ceil(2 * (1.96 + 0.84) ** 2 * baseline * (1 - baseline) / min_change ** 2)
 
 
-def readout(conn: sqlite3.Connection, exp: sqlite3.Row, qualify_fn, booking_prefix: str) -> dict:
+def readout(conn: sqlite3.Connection, exp: sqlite3.Row, qualify_fn, booking_prefix: str | tuple[str, ...]) -> dict:
     """Funnel per branch since the test started. Booking-tool use comes from the call list (every call);
     qualified bookings need downloaded details (run `coach review` first)."""
     rows = conn.execute(
@@ -76,7 +76,8 @@ def readout(conn: sqlite3.Connection, exp: sqlite3.Row, qualify_fn, booking_pref
         connected = [r for r in rs if r["funnel_stage"] in CONNECTED]
         no_reply = sum(1 for r in connected if r["funnel_stage"] == "no_reply")
         engaged = sum(1 for r in connected if r["funnel_stage"] == "engaged")
-        booking = sum(1 for r in rs if f'"{booking_prefix}' in (r["tool_names"] or ""))
+        prefixes = booking_prefix if isinstance(booking_prefix, tuple) else (booking_prefix,)
+        booking = sum(1 for r in rs if any(f'"{p}' in (r["tool_names"] or "") for p in prefixes))
         qualified = sum(1 for r in rs if r["booked"] and qualify_fn(json.loads(r["booking_profile"] or "{}")) == "qualified")
         arms[label] = {"calls": len(rs), "connected": len(connected), "no_reply": no_reply, "engaged": engaged,
                        "booking_tool_calls": booking, "qualified_bookings": qualified}
