@@ -6,6 +6,10 @@
 #   2. add OPENROUTER_API_KEY to .env (grading always uses Jev)
 #   3. put recordings in recordings/<name>/ and run `./coach use <name>` and `./coach pilot`
 # Transcripts are saved in data/<name>/transcripts/ on this computer only. Recordings and transcripts are never pushed.
+# Tips: (1) one subfolder per salesperson, named after them (see [[agents]] below): a comparison per person, and the
+#           speaker who says that name early in the call ("hi, this is Dana") is taken as the salesperson;
+#       (2) put the date in file names, year first (2026-10-08_1430.mp3): it becomes the call date, so a batch of old
+#           recordings still lands on the right days. Without one, a call counts from when it was first transcribed.
 
 label = "Team name"
 source = "recordings"
@@ -14,7 +18,7 @@ checklist = "config/checklist_s1.toml"
 description = "Salespeople calling leads for <what you sell>. The goal of each call is a booked follow-up meeting."
 # folder = "recordings/team"        # default: recordings/<this file's name>
 # language = "en"                   # default: detected per recording (Hebrew = "he")
-# rep_speaker = 1                   # who is the salesperson: 1 = whoever speaks first, 2 = the second voice
+# rep_speaker = 1                   # when nobody says the folder's name: 1 = whoever speaks first, 2 = the second voice
 
 [outcome]
 version = "next_step_v1"

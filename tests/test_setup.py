@@ -72,7 +72,7 @@ def test_recordings_setup_writes_profile_checklist_and_keys(root):
     seen = []
     key = run_setup(root, log=quiet, transport=fake_openrouter(seen),
                     ask=answers("3", "Bright Smile Dental", "1", "Dental check-ups for families", "Our receptionists answer calls",
-                                "A booked check-up", "Mention the free first visit", "Give medical advice", "English"),
+                                "A booked check-up", "Mention the free first visit", "Give medical advice", "English", ""),
                     ask_secret=answers("el-secret", "or-secret"))
     assert key == "bright-smile-dental" and current_account(root) == key
     s = load_settings(root, account=key)
@@ -127,4 +127,15 @@ def test_elevenlabs_setup_several_success_tools(root):
                     ask_secret=answers("el-secret", "or-secret"))
     s = load_settings(root, account=key)
     assert s.outcome["booking_tool_prefix"] == ("book_checkup", "send_lead_to_crm")   # calls and chats both count
+
+
+def test_recordings_setup_makes_a_folder_per_salesperson(root):
+    key = run_setup(root, log=quiet, transport=fake_openrouter([]),
+                    ask=answers("3", "Bright Smile Dental", "1", "Dental check-ups for families", "Our receptionists answer calls",
+                                "A booked check-up", "Mention the free first visit", "Give medical advice", "English",
+                                "Dana Cohen, יוסי"),
+                    ask_secret=answers("el-secret", "or-secret"))
+    s = load_settings(root, account=key)
+    assert [(a.key, a.agent_id, a.label) for a in s.agents] == [("dana-cohen", "Dana Cohen", "Dana Cohen"), ("rep2", "יוסי", "יוסי")]
+    assert (root / "recordings" / key / "Dana Cohen").is_dir() and (root / "recordings" / key / "יוסי").is_dir()
 

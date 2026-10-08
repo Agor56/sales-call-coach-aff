@@ -207,6 +207,46 @@ def write_checklist(root: Path, account: str, account_path: Path, profile_text: 
     return version
 
 
+RECORDING_TIPS = """
+Two things make the analysis much better:
+  1. One folder per salesperson, named after them. You get a comparison per person, coaching
+     (`./coach changes add`) can be tracked for one person, and whoever says that name early in a call
+     ("hi, this is Dana") is taken as the salesperson, even when the customer spoke first.
+  2. The date in each file name, year first: 2026-10-08_1430.mp3 or call-20261008-143012.m4a.
+     Most phone systems and recording apps already name files this way. The coach uses it as the call date,
+     so dropping a month of calls at once still puts each call on its real day. Without a date, a call counts
+     from the day it was added. (Day-first dates like 08.10.2026 are ignored: 8 Oct or 10 Aug can't be told apart.)"""
+
+
+def setup_recording_folders(account_path: Path, folder: Path, ask, log) -> list[str]:
+    """Recordings: recommends a folder per salesperson + dates in file names, and creates the folders and agent entries."""
+    from .account_edit import add_agent, remove_agent
+    from .cli import _slug
+
+    folder.mkdir(parents=True, exist_ok=True)
+    log(RECORDING_TIPS)
+    raw = ask("\nYour salespeople's names, separated by commas (Enter = one shared folder for everyone): ").strip()
+    names = list(dict.fromkeys(n.strip() for n in raw.split(",") if n.strip()))
+    if not names:
+        log(f"\nPut your call recordings (mp3, wav, m4a…) in: {folder}")
+        return []
+    taken: set[str] = {"team"}
+    folders = []
+    for i, name in enumerate(names, 1):
+        sub_name = re.sub(r'[\\/:*?"<>|]', "", name).strip(". ") or f"rep{i}"   # Hebrew names are fine as folder names
+        key = _slug(name, taken)
+        key = key if key != "agent" else f"rep{i}"
+        taken.add(key)
+        (folder / sub_name).mkdir(exist_ok=True)
+        add_agent(account_path, agent_id=sub_name, key=key, label=name)
+        folders.append(folder / sub_name)
+    remove_agent(account_path, "team")                                  # the template's "whole team" entry
+    log("\nPut each person's recordings in their folder:")
+    for f in folders:
+        log(f"  {f}")
+    return names
+
+
 def run_setup(root: Path | None = None, *, ask=input, ask_secret=getpass.getpass, make_client=_elevenlabs_client,
               log=print, transport=None) -> str:
     root = root or PROJECT_ROOT
@@ -261,9 +301,7 @@ def run_setup(root: Path | None = None, *, ask=input, ask_secret=getpass.getpass
             value = q(booking[0]) if len(booking) == 1 else "[" + ", ".join(q(b) for b in booking) + "]"
             path.write_text(set_line(path.read_text(encoding="utf-8"), "booking_tool_prefix", value), encoding="utf-8")
     if source == "recordings":
-        folder = root / "recordings" / key
-        folder.mkdir(parents=True, exist_ok=True)
-        log(f"\nPut your call recordings (mp3, wav, m4a…) in: {folder}")
+        setup_recording_folders(path, root / "recordings" / key, ask, log)
 
     checklist_done = False
     orkey = env_value(env_path, "OPENROUTER_API_KEY")

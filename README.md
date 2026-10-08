@@ -132,7 +132,14 @@ Each account reads its calls from one place, set by `source` in its account file
 |---|---|---|---|---|
 | `elevenlabs` (default) | AI voice agents | `ELEVENLABS_API_KEY_<CLIENT>` | the booking tool returned without error | `_template.toml` |
 | `fireflies` | recorded meetings of human salespeople (Zoom, Google Meet, Teams) | `FIREFLIES_API_KEY_<CLIENT>` | the grader says the call ended with a dated next step | `_template_fireflies.toml` |
-| `recordings` | audio files you drop in `recordings/<client>/` (phone calls) | `ELEVENLABS_API_KEY_<CLIENT>` (for Scribe) | same as Fireflies | `_template_recordings.toml` |
+| `recordings` | audio files you drop in `recordings/<client>/` (phone calls); best with one subfolder per salesperson and the date in the file name | `ELEVENLABS_API_KEY_<CLIENT>` (for Scribe) | same as Fireflies | `_template_recordings.toml` |
+
+**Recordings tips** (the setup wizard asks for them): one subfolder per salesperson, named after them (Hebrew names are
+fine), gives a comparison per person, and the speaker who says that name early in the call ("hi, this is Dana",
+"Dana speaking") is taken as the salesperson, even when the customer spoke first. A year-first date in each file name (`2026-10-08_1430.mp3`,
+`call-20261008-143012.m4a`) becomes the call date, so a month of recordings dropped at once still lands on the real days;
+without one, a call counts from when it was first transcribed. Day-first dates (`08.10.2026`) are ignored because
+8 Oct and 10 Aug can't be told apart.
 
 Recordings accounts:
 - Supported files: mp3, wav, m4a, mp4, ogg, opus, flac, webm, aac. Each new file is transcribed once with ElevenLabs Scribe

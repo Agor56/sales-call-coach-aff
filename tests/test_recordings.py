@@ -1,4 +1,5 @@
 """Recordings folder source: fake audio files through a fake Scribe endpoint. No real call content."""
+import json
 import shutil
 from pathlib import Path
 
@@ -119,3 +120,47 @@ def test_missing_transcript_is_not_found(rec):
     s, _ = rec
     with pytest.raises(NotFoundError):
         client_for(s, FakeScribe()).get_conversation("rec_nope")
+
+
+def test_call_date_comes_from_the_file_name():
+    from datetime import datetime
+    from coach.recordings import date_from_name, to_conversation
+    ts = lambda *a: int(datetime(*a).timestamp())
+    assert date_from_name("2026-10-08_1430.mp3") == ts(2026, 10, 8, 14, 30)
+    assert date_from_name("call-20261008-143012.m4a") == ts(2026, 10, 8, 14, 30, 12)
+    assert date_from_name("dana 2026.10.08 14-30.wav") == ts(2026, 10, 8, 14, 30)
+    assert date_from_name("20261008.mp3") == ts(2026, 10, 8)
+    assert date_from_name("08.10.2026 14-30.mp3") is None            # day-first is ambiguous: ignored
+    assert date_from_name("+972501234567.mp3") is None               # a phone number is not a date
+    assert date_from_name("2026-13-45.mp3") is None
+    saved = {"file": "2026-10-08_1430.mp3", "added_at": 1, "scribe": {"words": []}}
+    assert to_conversation("c1", saved)["start_time_unix_secs"] == ts(2026, 10, 8, 14, 30)
+    assert to_conversation("c2", {**saved, "file": "no-date.mp3"})["start_time_unix_secs"] == 1
+
+
+def test_salesperson_found_by_their_name_from_the_folder():
+    from coach.recordings import name_tokens
+    inbound = [("speaker_0", "Hello I saw your ad"), ("speaker_1", "Hi Dana speaking how can I help"),
+               ("speaker_0", "Hi Dana I need a quote")]
+    saved = {"file": "x.mp3", "rep_hint": "Dana Cohen", "scribe": {"words": words(inbound)}}
+    roles = [t["role"] for t in to_conversation("c", saved)["transcript"]]
+    assert roles == ["user", "agent", "user"]                       # the customer spoke first: still right
+    hebrew = [("speaker_0", "הלו"), ("speaker_1", "שלום, מדברת דָּנָה מהמשרד")]
+    saved_he = {"file": "x.mp3", "rep_hint": "דנה", "scribe": {"words": words(hebrew)}}
+    assert [t["role"] for t in to_conversation("c", saved_he)["transcript"]] == ["user", "agent"]
+    nobody = {"file": "x.mp3", "rep_hint": "Yossi", "scribe": {"words": words(CALL)}}
+    assert to_conversation("c", nobody)["transcript"][0]["role"] == "agent"   # name never said: first voice (rep_speaker 1)
+    assert name_tokens("rep2") == set() and name_tokens("team") == set()
+
+
+def test_subfolder_name_is_remembered_for_each_recording(rec):
+    settings, folder = rec
+    (folder / "Dana").mkdir()
+    (folder / "call1.mp3").rename(folder / "Dana" / "call1.mp3")
+    c = client_for(settings, FakeScribe())
+    convs = {x["title"]: x for x in next(c.iter_conversations(agent_id="all"))[0]}
+    saved = {p.name: json.loads(p.read_text()) for p in c.store.glob("*.json")}
+    hints = {v["file"]: v.get("rep_hint") for v in saved.values()}
+    assert hints["call1.mp3"] == "Dana" and hints["call2.m4a"] is None
+    assert convs["call1.mp3"]["transcript"][0]["role"] == "agent"      # Dana introduces herself first in CALL
+
